@@ -1,0 +1,52 @@
+name: Morning Health Brief
+
+on:
+  # Lance automatiquement chaque matin à 10h30 (heure de Shanghai)
+  # GitHub Actions tourne en UTC — Shanghai = UTC+8, donc 2h30 UTC
+  schedule:
+    - cron: '30 2 * * *'
+
+  # Permet aussi de lancer manuellement depuis l'interface GitHub
+  workflow_dispatch:
+
+jobs:
+  health-brief:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout du code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Installer les dépendances
+        run: pip install garminconnect anthropic
+
+      - name: Lancer l'agent santé
+        env:
+          GARMIN_EMAIL:    ${{ secrets.GARMIN_EMAIL }}
+          GARMIN_PASSWORD: ${{ secrets.GARMIN_PASSWORD }}
+          ANTHROPIC_KEY:   ${{ secrets.ANTHROPIC_KEY }}
+        run: python garmin_fetch.py
+
+      # Optionnel : sauvegarde le résultat dans un fichier log
+      - name: Sauvegarder le log
+        if: always()
+        run: |
+          mkdir -p logs
+          python garmin_fetch.py > logs/$(date +%Y-%m-%d).txt 2>&1 || true
+        env:
+          GARMIN_EMAIL:    ${{ secrets.GARMIN_EMAIL }}
+          GARMIN_PASSWORD: ${{ secrets.GARMIN_PASSWORD }}
+          ANTHROPIC_KEY:   ${{ secrets.ANTHROPIC_KEY }}
+
+      - name: Upload du log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: health-log-${{ github.run_number }}
+          path: logs/
+          retention-days: 30
