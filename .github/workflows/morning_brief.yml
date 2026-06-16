@@ -27,9 +27,11 @@ jobs:
 
       - name: Lancer l'agent santé
         env:
-          GARMIN_EMAIL:    ${{ secrets.GARMIN_EMAIL }}
-          GARMIN_PASSWORD: ${{ secrets.GARMIN_PASSWORD }}
-          ANTHROPIC_KEY:   ${{ secrets.ANTHROPIC_KEY }}
+          GARMIN_EMAIL:     ${{ secrets.GARMIN_EMAIL }}
+          GARMIN_PASSWORD:  ${{ secrets.GARMIN_PASSWORD }}
+          ANTHROPIC_KEY:    ${{ secrets.ANTHROPIC_KEY }}
+          TELEGRAM_TOKEN:   ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python garmin_fetch.py
 
       # Optionnel : sauvegarde le résultat dans un fichier log
@@ -39,9 +41,11 @@ jobs:
           mkdir -p logs
           python garmin_fetch.py > logs/$(date +%Y-%m-%d).txt 2>&1 || true
         env:
-          GARMIN_EMAIL:    ${{ secrets.GARMIN_EMAIL }}
-          GARMIN_PASSWORD: ${{ secrets.GARMIN_PASSWORD }}
-          ANTHROPIC_KEY:   ${{ secrets.ANTHROPIC_KEY }}
+          GARMIN_EMAIL:     ${{ secrets.GARMIN_EMAIL }}
+          GARMIN_PASSWORD:  ${{ secrets.GARMIN_PASSWORD }}
+          ANTHROPIC_KEY:    ${{ secrets.ANTHROPIC_KEY }}
+          TELEGRAM_TOKEN:   ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
 
       - name: Upload du log
         if: always()
