@@ -2,51 +2,71 @@
 garmin_fetch.py
 ---------------
 Récupère tes données Garmin Connect du jour et génère une recommandation
-de séance via Claude API.
+de séance via Claude API, puis envoie le bilan sur Telegram.
 
 INSTALLATION (une seule fois) :
-    pip install garminconnect anthropic
+    pip install garminconnect anthropic requests
 
-USAGE :
-    python garmin_fetch.py
-
-VARIABLES À RENSEIGNER :
-    GARMIN_EMAIL    → ton email Garmin Connect
-    GARMIN_PASSWORD → ton mot de passe Garmin Connect
-    ANTHROPIC_KEY   → ta clé API Anthropic (https://console.anthropic.com)
+VARIABLES D'ENVIRONNEMENT :
+    GARMIN_EMAIL      → ton email Garmin Connect
+    GARMIN_PASSWORD   → ton mot de passe Garmin Connect
+    ANTHROPIC_KEY     → ta clé API Anthropic
+    TELEGRAM_TOKEN    → token du bot BotFather
+    TELEGRAM_CHAT_ID  → ton Chat ID Telegram
 """
 
 import json
 import os
+import requests
 from datetime import date, timedelta
 from garminconnect import Garmin
 import anthropic
 
 # ─────────────────────────────────────────────
-# CONFIGURATION
-# Les credentials sont lus depuis les variables d'environnement.
-# En local : renseigne-les directement ici.
-# Sur GitHub Actions : définis-les dans Settings → Secrets.
+# CONFIGURATION — lus depuis les variables d'environnement
+# Sur GitHub Actions : Settings → Secrets
+# En local : renseigne directement ici
 # ─────────────────────────────────────────────
-GARMIN_EMAIL    = os.environ.get("GARMIN_EMAIL",    "ton_email@example.com")
-GARMIN_PASSWORD = os.environ.get("GARMIN_PASSWORD", "ton_mot_de_passe")
-ANTHROPIC_KEY   = os.environ.get("ANTHROPIC_KEY",   "")
+GARMIN_EMAIL     = os.environ.get("GARMIN_EMAIL",     "")
+GARMIN_PASSWORD  = os.environ.get("GARMIN_PASSWORD",  "")
+ANTHROPIC_KEY    = os.environ.get("ANTHROPIC_KEY",    "")
+TELEGRAM_TOKEN   = os.environ.get("TELEGRAM_TOKEN",   "")
+TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
+
+# ─────────────────────────────────────────────
+# TELEGRAM
+# ─────────────────────────────────────────────
+def send_telegram(message):
+    """Envoie un message Telegram. Silencieux si token absent."""
+    if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
+        print("⚠️  Telegram non configuré — envoi ignoré")
+        return
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    payload = {
+        "chat_id": TELEGRAM_CHAT_ID,
+        "text": message,
+        "parse_mode": "Markdown",
+    }
+    try:
+        r = requests.post(url, json=payload, timeout=10)
+        if r.status_code == 200:
+            print("✅ Message Telegram envoyé")
+        else:
+            print(f"⚠️  Telegram erreur : {r.status_code} — {r.text}")
+    except Exception as e:
+        print(f"⚠️  Telegram exception : {e}")
 
 # ─────────────────────────────────────────────
 # CONNEXION GARMIN
 # ─────────────────────────────────────────────
 def connect_garmin():
-    """Connexion à Garmin Connect. Gère le MFA si activé."""
+    """Connexion à Garmin Connect."""
     client = Garmin(GARMIN_EMAIL, GARMIN_PASSWORD)
     try:
         client.login()
         print("✅ Connecté à Garmin Connect")
     except Exception as e:
         print(f"❌ Erreur de connexion : {e}")
-        print("→ Si tu as le double facteur activé, entre le code MFA ici :")
-        mfa = input("Code MFA (laisse vide si non activé) : ").strip()
-        if mfa:
-            client.login(mfa)
     return client
 
 # ─────────────────────────────────────────────
@@ -56,19 +76,17 @@ def fetch_data(client):
     """Récupère les métriques clés du jour et de la nuit précédente."""
     today     = date.today().isoformat()
     yesterday = (date.today() - timedelta(days=1)).isoformat()
-
     data = {}
 
-    # Données de sommeil (nuit précédente)
+    def safe_div(val, divisor, decimals=0):
+        if val is None:
+            return "N/A"
+        return round(val / divisor, decimals) if decimals else round(val / divisor)
+
+    # Sommeil
     try:
         sleep = client.get_sleep_data(yesterday)
         daily = sleep.get("dailySleepDTO", {})
-        def safe_div(val, divisor, decimals=0):
-            """Division sécurisée : retourne N/A si val est None."""
-            if val is None:
-                return "N/A"
-            return round(val / divisor, decimals) if decimals else round(val / divisor)
-
         data["sleep"] = {
             "score":          (daily.get("sleepScores") or {}).get("overall", {}).get("value", "N/A"),
             "duration_hours": safe_div(daily.get("sleepTimeSeconds"), 3600, 1),
@@ -101,7 +119,7 @@ def fetch_data(client):
         print(f"⚠️  Body Battery : {e}")
         data["body_battery"] = "N/A"
 
-    # Stress du jour
+    # Stress
     try:
         stress = client.get_stress_data(today)
         data["stress_avg"] = stress.get("avgStressLevel", "N/A")
@@ -110,7 +128,7 @@ def fetch_data(client):
         print(f"⚠️  Stress : {e}")
         data["stress_avg"] = "N/A"
 
-    # Dernières activités (3 dernières)
+    # Activités
     try:
         activities = client.get_activities(0, 3)
         data["recent_activities"] = [
@@ -131,13 +149,12 @@ def fetch_data(client):
     return data
 
 # ─────────────────────────────────────────────
-# AFFICHAGE BRUT
+# AFFICHAGE TERMINAL
 # ─────────────────────────────────────────────
 def print_data(data):
     print("\n" + "="*50)
     print("📊 TES DONNÉES DU JOUR")
     print("="*50)
-
     sleep = data.get("sleep", {})
     print(f"\n🌙 SOMMEIL")
     print(f"   Score         : {sleep.get('score', 'N/A')}/100")
@@ -146,33 +163,29 @@ def print_data(data):
     print(f"   REM           : {sleep.get('rem_minutes', 'N/A')} min")
     print(f"   FC repos      : {sleep.get('resting_hr', 'N/A')} bpm")
     print(f"   SpO2 moy.     : {sleep.get('avg_spo2', 'N/A')} %")
-
     print(f"\n⚡ RÉCUPÉRATION")
     print(f"   Body Battery  : {data.get('body_battery', 'N/A')}/100")
     print(f"   Stress moyen  : {data.get('stress_avg', 'N/A')}/100")
-
     print(f"\n🏃 DERNIÈRES ACTIVITÉS")
     for act in data.get("recent_activities", []):
         print(f"   {act['date']} | {act['type']:15} | {act['duration']} min | {act['distance']} km | FC moy {act['avg_hr']} bpm")
-
     print("="*50)
 
 # ─────────────────────────────────────────────
-# RECOMMANDATION CLAUDE
+# RECOMMANDATION CLAUDE + ENVOI TELEGRAM
 # ─────────────────────────────────────────────
 def get_recommendation(data):
-    """Envoie les données à Claude et retourne une recommandation de séance."""
-
-    if ANTHROPIC_KEY == "sk-ant-...":
-        print("\n⚠️  Clé Anthropic non renseignée — recommandation IA désactivée")
-        return
+    """Appelle Claude, affiche la recommandation et l'envoie sur Telegram."""
+    if not ANTHROPIC_KEY:
+        print("\n⚠️  Clé Anthropic absente — recommandation IA désactivée")
+        return None
 
     sleep   = data.get("sleep", {})
     battery = data.get("body_battery", "N/A")
     stress  = data.get("stress_avg", "N/A")
     acts    = data.get("recent_activities", [])
 
-    prompt = f"""Tu es mon coach personnel. Mon objectif principal est de construire une base cardio solide pour les standards militaires (Cooper 3000m+, endurance longue distance). Je fais du rugby et du taekwondo en parallèle.
+    prompt = f"""Tu es mon coach personnel. Mon objectif est de construire une base cardio solide pour les standards militaires (Cooper 3000m+, endurance longue distance). Je fais du rugby et du taekwondo en parallèle.
 
 Voici mes données physiologiques du jour :
 
@@ -192,29 +205,44 @@ ACTIVITÉS RÉCENTES :
 {json.dumps(acts, indent=2, ensure_ascii=False)}
 
 Sur la base de ces données, dis-moi :
-1. Mon niveau de récupération aujourd'hui (bon / moyen / insuffisant) et pourquoi en 2-3 phrases
-2. Le bloc de séance recommandé aujourd'hui parmi ces trois options :
-   - BLOC Z2 : 40-60 min course à allure basse (FC < 75% FCmax), construction moteur aérobie
-   - BLOC TEMPO : 25-35 min à allure soutenue (FC 80-87% FCmax), travail seuil lactique  
-   - BLOC FRACTIONNÉ : 20-25 min avec efforts courts intenses (ex: 8x400m), développement VO2max
-   - REPOS ACTIF : marche, mobilité, étirements uniquement
-3. Les paramètres précis de la séance (durée, allure, zones FC cibles)
+1. Mon niveau de récupération aujourd'hui (bon / moyen / insuffisant) en 2-3 phrases
+2. Le bloc de séance recommandé parmi :
+   - BLOC Z2 : 40-60 min course FC basse (< 75% FCmax)
+   - BLOC TEMPO : 25-35 min FC modérée-haute (80-87% FCmax)
+   - BLOC FRACTIONNÉ : 20-25 min efforts intenses (ex: 8x400m)
+   - REPOS ACTIF : marche, mobilité uniquement
+3. Les paramètres précis (durée, allure, zones FC)
 4. Un signal d'alerte si une donnée est préoccupante
 
-Sois direct et concis. Format : titre du bloc en majuscules, puis bullet points courts."""
+Sois direct et concis. Format texte simple sans markdown complexe, compatible Telegram."""
 
     client = anthropic.Anthropic(api_key=ANTHROPIC_KEY)
     response = client.messages.create(
-        model="claude-sonnet-4-6",
+        model="claude-haiku-4-5-20251001",
         max_tokens=600,
         messages=[{"role": "user", "content": prompt}]
     )
+    recommendation = response.content[0].text
 
     print("\n" + "="*50)
     print("🤖 RECOMMANDATION COACH IA")
     print("="*50)
-    print(response.content[0].text)
+    print(recommendation)
     print("="*50)
+
+    # Formatage du message Telegram
+    today_str = date.today().strftime("%d/%m/%Y")
+    telegram_msg = (
+        f"🏃 *Bilan santé — {today_str}*\n\n"
+        f"🌙 Sommeil : {sleep.get('score', 'N/A')}/100 "
+        f"({sleep.get('duration_hours', 'N/A')}h)\n"
+        f"⚡ Body Battery : {battery}/100\n"
+        f"😌 Stress : {stress}/100\n\n"
+        f"━━━━━━━━━━━━━━━━━━\n\n"
+        f"{recommendation}"
+    )
+    send_telegram(telegram_msg)
+    return recommendation
 
 # ─────────────────────────────────────────────
 # MAIN
