@@ -1,0 +1,200 @@
+{
+  "_meta": {
+    "derniere_maj": "2026-06-19",
+    "version": "2.1",
+    "note": "Baseline construite sur export Garmin 2021-2026 (354 activités) + littérature scientifique 2024-2026",
+    "references_scientifiques": "Voir METHODO_SCIENTIFIQUE.md dans le Project"
+  },
+
+  "identite": {
+    "prenom": "Mathurin",
+    "naissance": "2003-09-14",
+    "age": 22,
+    "taille_cm": 173,
+    "poids_kg": 67
+  },
+
+  "objectif_principal": {
+    "concours": "ESM Saint-Cyr — voie OST",
+    "date_cible": "2028-06",
+    "epreuve_critique": "3000m",
+    "cible_3000m": "11:30",
+    "cible_note_moyenne": "16/20",
+    "barème_officiel_homme": {
+      "3000m": {"20pts": "10:29", "15pts": "11:36", "13pts": "12:10", "10pts": "13:12"},
+      "tractions": {"20pts": 17, "15pts": 12, "10pts": 7},
+      "abdominaux_1min": {"20pts": 45, "15pts": 35, "10pts": 25},
+      "sprint_50m": {"20pts": "6.47", "15pts": "6.70", "10pts": "7.15"},
+      "natation_50m": {"20pts": "29.6", "15pts": "33.1", "10pts": "41.7"}
+    },
+    "detail_cibles": {
+      "tractions": {"perf": 15, "note": 18},
+      "abdominaux": {"perf": 42, "note": 17},
+      "natation_50m": {"perf": "33s", "note": 15},
+      "sprint_50m": {"perf": "6.65s", "note": 16},
+      "course_3000m": {"perf": "11:30", "note": 15}
+    }
+  },
+
+  "resultats_esm_2024": {
+    "date": "2024-06-18",
+    "tractions": {"perf": 14, "note": 17},
+    "abdominaux": {"perf": 35, "note": 12},
+    "natation_50m": {"perf": "40.5s", "note": 10},
+    "sprint_50m": {"perf": "6.78s", "note": 14},
+    "course_3000m": {"perf": "19:07_DNF_periostite", "note": 0},
+    "moyenne": 10.6,
+    "contexte": "Passé avec périostite tibiale active + sortie de 3 ans de prépa — NON représentatif du potentiel réel"
+  },
+
+  "physiologie": {
+    "fcmax_bpm": 203,
+    "fcmax_source": "Garmin heartRateZones officiel",
+    "fc_repos_reference_bpm": 54,
+    "fc_repos_reference_date": "2025-06",
+    "fc_repos_actuelle_bpm": 62,
+    "vo2max_actuel": 48,
+    "vo2max_date": "2026-06",
+    "vo2max_tendance": "MONTANTE depuis janvier 2026 (44->48 en 6 mois) — meilleure dynamique depuis 2021",
+    "vo2max_historique_annuel": {
+      "2021-09": 56, "2022-03": 44, "2023-03": 48, "2024-05": 47,
+      "2025-04": 43, "2026-01": 44, "2026-06": 48
+    },
+    "vo2max_cible_2028": 56,
+    "vma_estimee_kmh": 13.7,
+    "vma_estimee_methode": "Léger-Mercier: VMA = VO2max/3.5 = 48/3.5",
+    "vma_testee_kmh": null,
+    "vma_test_date": null,
+    "vma_test_protocole": "Tapis pente 1%, échauffement 10min à 8km/h, +0.5km/h chaque minute jusqu'à épuisement. Dernière vitesse tenue 1min complète = VMA.",
+    "allure_3000m_cible": "3:50/km (15.6 km/h) pour 11:30",
+    "vma_requise_pour_cible": "16.5-17 km/h (3000m couru à ~92-94% VMA) => VO2max ~57-58"
+  },
+
+  "zones_fc_officielles": {
+    "source": "FCmax 203 bpm — Garmin",
+    "z1_recuperation": [0, 122],
+    "z2_endurance": [122, 142],
+    "z3_tempo": [142, 162],
+    "z4_seuil": [162, 183],
+    "z5_vma": [183, 203],
+    "note_importante": "Mathurin a du mal à rester sous 142 en courant. Sa Z2 fonctionnelle (talk test) est probablement 140-152 bpm. À CONFIRMER par test terrain. Ne pas le forcer sous 140 si le talk test passe à 148."
+  },
+
+  "modele_entrainement": {
+    "principe": "Polarisé 80/20 (Seiler & Kjerland 2006, Stöggl & Sperlich 2014)",
+    "regle": "80% du VOLUME en basse intensité (Z1-Z2), 20% en haute intensité (Z4-Z5). Éviter la zone grise (Z3 tempo) qui fatigue sans adapter.",
+    "piege_a_eviter": "Le 'grey zone': courir les jours faciles trop dur (zone moyenne-dure). Erreur n°1 de l'amateur. Les jours faciles DOIVENT être vraiment faciles.",
+    "application_mathurin": "Phase 1 = quasi 100% Z2 (construire la base). Le 20% intensité s'introduit en Phase 2 quand la base est solide."
+  },
+
+  "zones_allures_vma_estimee": {
+    "_calcul": "Basé sur VMA 13.7 km/h — PROVISOIRE jusqu'au test VMA",
+    "z1_recup_kmh": 8.2, "z1_recup_pace": "7:18/km",
+    "z2_endurance_kmh": "8.9-9.6", "z2_endurance_pace": "6:15-6:45/km",
+    "tempo_seuil_kmh": 11.5, "tempo_seuil_pace": "5:13/km",
+    "vo2_intervalle_kmh": "12.3-13.0", "vo2_intervalle_pace": "4:37-4:53/km",
+    "vma_kmh": 13.7, "vma_pace": "4:22/km",
+    "statut": "PROVISOIRE — recalibrer après test VMA lundi 2026-06-23"
+  },
+
+  "performances_running_reelles": {
+    "best_3km_allure": "5:32/km", "best_3km_date": "2025-12-17", "best_3km_fc_moy": 171,
+    "best_5km_temps": "28:40", "best_5km_allure": "5:44/km", "best_5km_date": "2025-07-31", "best_5km_fc_moy": 179,
+    "best_10km_allure": "6:11/km", "best_10km_date": "2022-07-15",
+    "course_la_plus_longue_km": 15.5, "course_la_plus_longue_date": "2025-05-05",
+    "meilleure_periode_aerobie": "Fin 2024: séances 15km à 6:40/km en aérobie, Luc Léger palier 7.5-8, 4-5 séances/semaine",
+    "sprint_reference": "6.78s au 50m à St-Cyr (sans starting block, pas son PR) — bon potentiel vitesse"
+  },
+
+  "profil_sportif": {
+    "points_forts": [
+      "Vitesse de base et sprint (atout rare pour un coureur de demi-fond)",
+      "Force haut du corps (14 tractions au concours en sortie de blessure)",
+      "Réponse rapide à l'entraînement (VO2max remonte vite)",
+      "Capacité prouvée à encaisser du volume (15km, 4-5 séances/sem fin 2024)"
+    ],
+    "points_faibles": [
+      "Vitesse spécifique 3000m sous-développée (3km plafonne à 5:32/km)",
+      "FC qui monte vite à l'effort — économie de course et base aérobie à consolider",
+      "Abdominaux protocole ESM (35 -> 42+ visé)",
+      "Natation (40.5s -> 33s visé)",
+      "Instabilité des acquis: perte rapide après coupures"
+    ],
+    "diagnostic_central": "Bon potentiel aérobie (VO2max 48 montant) + bonne vitesse de base, MAIS jamais converti en vitesse soutenable sur 3000m faute de continuité. Le chantier n'est pas le moteur, c'est la régularité + la vitesse spécifique.",
+    "antecedents_medicaux": "Périostite tibiale bilatérale (MTSS) 2022-2024 — risque rechute ÉLEVÉ, priorité prévention absolue",
+    "pattern_detrainement_explique": "Confirmé par littérature (Mujika & Padilla 2000): les gains RÉCENTS de VO2max se perdent vite (VO2max -7% dès 12j d'arrêt, volume plasmatique en premier). Les gains anciens et consolidés résistent mieux. D'où l'importance de construire une base PROFONDE et ANCIENNE, pas juste un pic.",
+    "frequence_weekend": "4% des séances sur 5 ans (0% le dimanche) — ne pas programmer d'entraînement le weekend"
+  },
+
+  "prevention_periostite": {
+    "diagnostic": "MTSS (Medial Tibial Stress Syndrome) — fréquent chez militaires et coureurs",
+    "mesures_obligatoires_phase1": [
+      "Renforcement excentrique mollets (gastrocnémien + soléaire) 3x/semaine",
+      "Renforcement tibial postérieur et fléchisseurs (élévations, theraband)",
+      "Démarrer sur surface plane uniquement (pas de côtes, pas de piste les 1ères semaines)",
+      "Progression de charge graduelle (la charge osseuse progressive remodèle le cortex tibial)",
+      "Travail proprioception (équilibre unipodal) et gainage hanches/core",
+      "Privilégier vélo/tapis amorti en début de reprise pour limiter l'impact"
+    ],
+    "signal_alerte": "Toute douleur le long du bord interne du tibia = STOP course, bascule vélo, signaler immédiatement",
+    "source": "StatPearls MTSS 2024-2025, RCT lower-leg strengthening 2024-2025"
+  },
+
+  "strategie_anti_detrainement": {
+    "principe": "Mujika & Padilla: pour maintenir les acquis lors de périodes chargées (exams, voyages), réduire le VOLUME (jusqu'à -60-90%) mais MAINTENIR l'INTENSITÉ et un minimum de fréquence.",
+    "regle_pratique": "Mieux vaut 2 séances courtes intenses/semaine que tout arrêter. Une seule séance qualité/semaine limite déjà fortement la perte.",
+    "application": "Si Mathurin doit couper (voyage, exams), l'agent doit proposer un format minimal de maintien plutôt que rien."
+  },
+
+  "planning_semaine_type": {
+    "lundi": "ENTRAINEMENT", "mardi": "ENTRAINEMENT", "mercredi": "ENTRAINEMENT",
+    "jeudi": "LEGER ou REPOS (10% des séances historiques)", "vendredi": "ENTRAINEMENT",
+    "samedi": "BIEN_ETRE (étirements, mobilité, marche)", "dimanche": "REPOS (0% historique)"
+  },
+
+  "equipement_disponible": {
+    "montre": "Garmin Venu 2 (pas portée la nuit — sommeil lacunaire jusqu'à Garmin Index Sleep Monitor)",
+    "salle_sport": true, "tapis_course": true, "velo_salle": true,
+    "barre_traction": "En chambre — séries possibles en journée",
+    "piscine": false, "piste": false,
+    "lieu_actuel": "Shanghai jusqu'à ~juillet 2026, puis retour France"
+  },
+
+  "plan_progression_24_mois": {
+    "phase_1_base": {
+      "periode": "2026-06 à 2026-12",
+      "objectif": "Base aérobie PROFONDE et durable + prévention périostite + abdos/tractions",
+      "distribution": "~90% Z2, 10% accélérations courtes (lignes droites). PAS de fractionné intense.",
+      "volume": "Progression douce +10%/semaine max, semaine allégée toutes les 4 semaines",
+      "muscu": "Haut du corps 2x/sem (tractions, abdos ESM) + bas du corps/mollets 2x/sem (prévention)",
+      "3000m_cible_fin": "14:00-15:00"
+    },
+    "phase_2_seuil": {
+      "periode": "2027-01 à 2027-06",
+      "objectif": "Développer vitesse seuil et VMA — introduire le 20% intensité",
+      "distribution": "80% Z2 / 20% intensité (tempo + fractionné VMA type 30-30 Billat, 5x1000m)",
+      "3000m_cible_fin": "12:30-13:00"
+    },
+    "phase_3_specifique": {
+      "periode": "2027-07 à 2028-03",
+      "objectif": "Vitesse spécifique 3000m + simulation épreuves + natation/sprint",
+      "distribution": "Fractionné à allure 3000m, simulations 5 épreuves enchaînées, affûtage",
+      "3000m_cible_fin": "11:30"
+    },
+    "phase_4_affutage": {
+      "periode": "2028-04 à 2028-06",
+      "objectif": "Affûtage final (réduire volume, garder intensité), pic de forme jour J",
+      "3000m_cible_fin": "11:30 ou mieux"
+    }
+  },
+
+  "suivi_progres": {
+    "derniere_mesure_3000m": null,
+    "derniere_mesure_vma": null,
+    "derniere_mesure_tractions_max": null,
+    "derniere_mesure_abdos_max": null,
+    "fc_repos_30j": null,
+    "volume_km_30j": null,
+    "note": "À remplir après tests de calibration semaine du 2026-06-23"
+  }
+}
