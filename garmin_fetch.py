@@ -325,6 +325,7 @@ def save_historique(hist, data):
         "readiness":    rd_score,
         "vo2max":       data.get("vo2max", "N/A"),
         "nb_activites": len(data.get("recent_activities", [])),
+        "reco":         data.get("reco", ""),
     }
 
     hist["entrees"] = [e for e in hist["entrees"] if e.get("date") != today]
@@ -499,4 +500,17 @@ if __name__ == "__main__":
     print_data(data)
 
     hist = save_historique(hist, data)
-    get_recommendation(data, profil, hist)
+    reco = get_recommendation(data, profil, hist)
+
+    # Persister la reco du jour dans l'historique (pour l'app mobile)
+    if reco:
+        today = date.today().isoformat()
+        for e in hist["entrees"]:
+            if e.get("date") == today:
+                e["reco"] = reco
+                break
+        try:
+            json.dump(hist, open(HISTORIQUE_FILE, "w"), indent=2, ensure_ascii=False)
+            print("✅ Reco du jour sauvegardée dans l'historique")
+        except Exception as ex:
+            print(f"⚠️  Sauvegarde reco: {ex}")
