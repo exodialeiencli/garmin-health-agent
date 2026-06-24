@@ -25,18 +25,20 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-          cache: 'pip'
 
       - name: Installer dépendances
-        run: pip install garminconnect anthropic requests
+        run: pip install -r requirements.txt
 
       - name: Lancer l'agent
         env:
-          GARMIN_EMAIL:     ${{ secrets.GARMIN_EMAIL }}
-          GARMIN_PASSWORD:  ${{ secrets.GARMIN_PASSWORD }}
-          ANTHROPIC_KEY:    ${{ secrets.ANTHROPIC_KEY }}
-          TELEGRAM_TOKEN:   ${{ secrets.TELEGRAM_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          # Auth Garmin : le token (si défini) est prioritaire et évite le rate-limit 429.
+          # Sinon, fallback automatique sur email/password.
+          GARMIN_TOKEN_BASE64: ${{ secrets.GARMIN_TOKEN_BASE64 }}
+          GARMIN_EMAIL:        ${{ secrets.GARMIN_EMAIL }}
+          GARMIN_PASSWORD:     ${{ secrets.GARMIN_PASSWORD }}
+          ANTHROPIC_KEY:       ${{ secrets.ANTHROPIC_KEY }}
+          TELEGRAM_TOKEN:      ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID:    ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python garmin_fetch.py
 
       - name: Sauvegarder l'historique dans le repo
