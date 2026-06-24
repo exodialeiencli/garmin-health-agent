@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1">
+<meta name="theme-color" content="#1B2A4A">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="ESM 2028">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<title>ESM 2028 — Mathurin</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+:root{
+  --bg:#0F1A30; --panel:#16233F; --panel2:#1E2F4F; --line:#2A3C5E;
+  --navy:#1B2A4A; --blue:#3B82F6; --blue-d:#2563EB;
+  --green:#22C55E; --amber:#F59E0B; --red:#EF4444; --violet:#A78BFA;
+  --txt:#E8EEF7; --mut:#8FA3C4; --mut2:#5E7299;
+  --mono:ui-monospace,'SF Mono',Menlo,Consolas,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{background:var(--bg);color:var(--txt);font-family:var(--sans);overscroll-behavior:none}
+body{padding-bottom:calc(72px + env(safe-area-inset-bottom))}
+
+/* ── TOP BAR ─────────────────────────────────────────── */
+.topbar{position:sticky;top:0;z-index:20;background:linear-gradient(180deg,#1B2A4A,#16233F);
+  padding:calc(12px + env(safe-area-inset-top)) 18px 12px;border-bottom:1px solid var(--line)}
+.topbar .row{display:flex;justify-content:space-between;align-items:flex-end}
+.brand{font-size:13px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--txt)}
+.brand small{display:block;font-size:9px;font-weight:600;letter-spacing:.18em;color:var(--mut2);margin-top:3px}
+.count{text-align:right}
+.count .n{font-family:var(--mono);font-size:26px;font-weight:700;color:var(--green);line-height:1}
+.count .l{font-size:8.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--mut);margin-top:3px}
+
+/* ── LAYOUT ──────────────────────────────────────────── */
+.view{padding:16px 14px;max-width:560px;margin:0 auto;display:none;animation:fade .35s ease}
+.view.active{display:block}
+@keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.eyebrow{font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--mut2);
+  margin:4px 2px 10px;font-weight:700;display:flex;align-items:center;gap:8px}
+.eyebrow::after{content:"";flex:1;height:1px;background:var(--line)}
+
+/* ── CARDS ───────────────────────────────────────────── */
+.card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:16px;margin-bottom:12px}
+.card h3{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--mut);margin-bottom:12px;font-weight:700}
+
+/* KPI grid */
+.kgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.kpi{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px}
+.kpi .v{font-family:var(--mono);font-size:30px;font-weight:700;line-height:1}
+.kpi .l{font-size:10px;letter-spacing:.04em;color:var(--mut);margin-top:6px;text-transform:uppercase}
+.kpi .d{font-size:11px;font-family:var(--mono);margin-top:4px}
+.kpi.b .v{color:var(--blue)} .kpi.g .v{color:var(--green)}
+.kpi.a .v{color:var(--amber)} .kpi.v .v{color:var(--violet)} .kpi.r .v{color:var(--red)}
+.up{color:var(--green)} .down{color:var(--red)} .flat{color:var(--mut2)}
+
+/* Today snapshot rows */
+.metric{display:flex;align-items:center;justify-content:space-between;padding:11px 0;border-bottom:1px solid var(--line)}
+.metric:last-child{border-bottom:none}
+.metric .lab{font-size:13px;color:var(--mut)}
+.metric .val{font-family:var(--mono);font-size:17px;font-weight:700}
+.chip{display:inline-block;padding:3px 9px;border-radius:99px;font-size:11px;font-weight:700;font-family:var(--mono)}
+.chip.g{background:#22C55E22;color:var(--green)} .chip.a{background:#F59E0B22;color:var(--amber)}
+.chip.r{background:#EF444422;color:var(--red)} .chip.b{background:#3B82F622;color:var(--blue)}
+
+/* charts */
+.chart{position:relative;height:160px}
+.chart.sm{height:130px}
+
+/* table */
+.tbl{width:100%;border-collapse:collapse;font-size:12px}
+.tbl th{position:sticky;top:0;background:var(--panel2);color:var(--mut);font-weight:600;
+  padding:8px 6px;text-align:right;font-size:10px;letter-spacing:.04em;text-transform:uppercase}
+.tbl th:first-child{text-align:left}
+.tbl td{padding:8px 6px;text-align:right;font-family:var(--mono);border-bottom:1px solid var(--line)}
+.tbl td:first-child{text-align:left;color:var(--mut)}
+.scroll{max-height:62vh;overflow:auto;border-radius:12px}
+
+/* reco */
+.reco{background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--blue);
+  border-radius:12px;padding:14px;margin-bottom:10px}
+.reco .date{font-size:11px;font-family:var(--mono);color:var(--mut2);margin-bottom:7px;letter-spacing:.04em}
+.reco .body{font-size:13.5px;line-height:1.55;color:var(--txt);white-space:pre-wrap}
+
+/* forecast */
+.fc{display:flex;align-items:center;gap:14px;padding:13px 0;border-bottom:1px solid var(--line)}
+.fc:last-child{border:none}
+.fc .ic{width:38px;height:38px;border-radius:10px;display:grid;place-items:center;font-size:18px;flex-shrink:0}
+.fc .t{flex:1}.fc .t .h{font-size:13px;font-weight:700;color:var(--txt)}
+.fc .t .s{font-size:11.5px;color:var(--mut);margin-top:2px;line-height:1.4}
+.fc .big{font-family:var(--mono);font-size:18px;font-weight:700;text-align:right}
+
+.note{font-size:11px;color:var(--mut2);margin-top:8px;line-height:1.5;font-style:italic}
+.alert{background:#F59E0B18;border:1px solid #F59E0B44;border-radius:12px;padding:12px 14px;
+  font-size:12.5px;color:#FCD9A0;margin-bottom:12px;line-height:1.45}
+
+/* ── TAB BAR ─────────────────────────────────────────── */
+.tabs{position:fixed;bottom:0;left:0;right:0;z-index:30;display:flex;
+  background:rgba(22,35,63,.96);backdrop-filter:blur(12px);border-top:1px solid var(--line);
+  padding-bottom:env(safe-area-inset-bottom)}
+.tab{flex:1;border:none;background:none;color:var(--mut2);padding:10px 4px 12px;
+  display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer;font-family:var(--sans)}
+.tab svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:2}
+.tab span{font-size:9.5px;letter-spacing:.04em;font-weight:600}
+.tab.active{color:var(--blue)}
+.tab.active svg{stroke:var(--blue)}
+
+#status{text-align:center;padding:80px 24px;color:var(--mut)}
+.spin{width:34px;height:34px;border:3px solid var(--line);border-top-color:var(--blue);
+  border-radius:50%;margin:0 auto 16px;animation:sp .8s linear infinite}
+@keyframes sp{to{transform:rotate(360deg)}}
+.skeleton{color:var(--mut2);font-size:13px;line-height:1.6}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="row">
+    <div class="brand">Mathurin · ESM<small>Saint-Cyr · Voie OST</small></div>
+    <div class="count"><div class="n" id="countdown">—</div><div class="l">jours avant le concours</div></div>
+  </div>
+</div>
+
+<!-- APERÇU -->
+<section class="view active" id="v-apercu">
+  <div id="status"><div class="spin"></div><div class="skeleton">Connexion à l'historique…</div></div>
+  <div id="apercu-content" style="display:none">
+    <div id="alerts"></div>
+    <div class="eyebrow">État du jour</div>
+    <div class="card" id="today-card"></div>
+    <div class="eyebrow">Repères</div>
+    <div class="kgrid" id="kpi-grid"></div>
+  </div>
+</section>
+
+<!-- HISTORIQUE -->
+<section class="view" id="v-historique">
+  <div class="eyebrow">Tendances · 90 jours</div>
+  <div class="card"><h3>❤️ FC repos (bpm)</h3><div class="chart sm"><canvas id="c-rhr"></canvas></div></div>
+  <div class="card"><h3>🌙 Score sommeil</h3><div class="chart sm"><canvas id="c-sleep"></canvas></div></div>
+  <div class="card"><h3>⚡ Body Battery</h3><div class="chart sm"><canvas id="c-bb"></canvas></div></div>
+  <div class="eyebrow">Journal complet</div>
+  <div class="card" style="padding:8px">
+    <div class="scroll"><table class="tbl">
+      <thead><tr><th>Date</th><th>FC</th><th>Sommeil</th><th>BB</th><th>Stress</th><th>Act.</th></tr></thead>
+      <tbody id="tbl-body"></tbody>
+    </table></div>
+  </div>
+</section>
+
+<!-- RECO -->
+<section class="view" id="v-reco">
+  <div class="eyebrow">Recommandations du coach</div>
+  <div id="reco-list"></div>
+</section>
+
+<!-- PRÉVISIONS -->
+<section class="view" id="v-previsions">
+  <div class="eyebrow">Trajectoire VO2max → 56</div>
+  <div class="card"><div class="chart"><canvas id="c-vo2"></canvas></div>
+    <div class="note" id="vo2-note"></div></div>
+  <div class="eyebrow">Projections (tendance récente)</div>
+  <div class="card" id="forecast-card"></div>
+  <div class="eyebrow">Distance à l'objectif</div>
+  <div class="card" id="gap-card"></div>
+</section>
+
+<!-- TAB BAR -->
+<nav class="tabs" id="tabs">
+  <button class="tab active" data-v="apercu">
+    <svg viewBox="0 0 24 24"><path d="M3 12l9-9 9 9M5 10v10h14V10"/></svg><span>Aperçu</span></button>
+  <button class="tab" data-v="historique">
+    <svg viewBox="0 0 24 24"><path d="M3 3v18h18M7 14l3-3 3 3 5-6"/></svg><span>Historique</span></button>
+  <button class="tab" data-v="reco">
+    <svg viewBox="0 0 24 24"><path d="M9 11l3 3 8-8M21 12a9 9 0 11-6.2-8.5"/></svg><span>Reco</span></button>
+  <button class="tab" data-v="previsions">
+    <svg viewBox="0 0 24 24"><path d="M3 17l6-6 4 4 8-8M21 7v6h-6"/></svg><span>Prévisions</span></button>
+</nav>
+
+<script>
+const REPO="exodialeiencli/garmin-health-agent", BRANCH="main";
+const ESM_DATE=new Date("2028-06-15");
+Chart.defaults.color="#8FA3C4"; Chart.defaults.font.size=10;
+Chart.defaults.font.family="ui-monospace,monospace";
+
+// countdown
+(function(){const d=Math.max(0,Math.round((ESM_DATE-new Date())/864e5));
+  document.getElementById("countdown").textContent=d;})();
+
+// tab nav
+document.getElementById("tabs").addEventListener("click",e=>{
+  const b=e.target.closest(".tab"); if(!b)return;
+  document.querySelectorAll(".tab").forEach(t=>t.classList.remove("active"));
+  document.querySelectorAll(".view").forEach(v=>v.classList.remove("active"));
+  b.classList.add("active");
+  document.getElementById("v-"+b.dataset.v).classList.add("active");
+  window.scrollTo(0,0);
+});
+
+const num=v=>(typeof v==="number"&&!isNaN(v))?v:null;
+const avg=a=>{const n=a.filter(num);return n.length?+(n.reduce((x,y)=>x+y,0)/n.length).toFixed(1):null;};
+
+// régression linéaire simple -> {slope, intercept} sur points {x,y}
+function linreg(pts){
+  const n=pts.length; if(n<2)return null;
+  let sx=0,sy=0,sxy=0,sxx=0;
+  for(const p of pts){sx+=p.x;sy+=p.y;sxy+=p.x*p.y;sxx+=p.x*p.x;}
+  const d=n*sxx-sx*sx; if(d===0)return null;
+  const slope=(n*sxy-sx*sy)/d, intercept=(sy-slope*sx)/n;
+  return {slope,intercept};
+}
+
+function mkLine(id,labels,data,color,fill,min,max){
+  const el=document.getElementById(id); if(!el)return;
+  new Chart(el,{type:"line",data:{labels,datasets:[{data,borderColor:color,
+    backgroundColor:fill,fill:true,borderWidth:2,tension:.3,spanGaps:true,
+    pointRadius:0,pointHoverRadius:4}]},
+    options:{responsive:true,maintainAspectRatio:false,
+    plugins:{legend:{display:false},tooltip:{mode:"index",intersect:false}},
+    scales:{x:{ticks:{maxTicksLimit:6,maxRotation:0},grid:{display:false}},
+            y:{min,max,grid:{color:"#2A3C5E"}}}}});
+}
+
+function chip(v,lo,hi,rev){
+  if(v==null)return '<span class="chip b">—</span>';
+  let c="b"; if(rev){c=v<=lo?"g":v>=hi?"r":"a";}else{c=v<=lo?"r":v>=hi?"g":"a";}
+  return `<span class="chip ${c}">${v}</span>`;
+}
+
+function render(entries){
+  entries.sort((a,b)=>a.date.localeCompare(b.date));
+  const L=entries.map(e=>e.date.slice(5));
+  const rhr=entries.map(e=>num(e.resting_hr)), sleep=entries.map(e=>num(e.sleep_score));
+  const bb=entries.map(e=>num(e.body_battery)), vo2=entries.map(e=>num(e.vo2max));
+  const last=entries[entries.length-1];
+
+  /* ── APERÇU ── */
+  // today card
+  const rd=last.readiness; const rdTxt=num(rd)!=null?rd+"/100":"—";
+  document.getElementById("today-card").innerHTML=`
+    <div class="metric"><span class="lab">😴 Sommeil</span><span class="val">${last.sleep_score??"—"}<span style="color:#5E7299">/100 · ${last.sleep_hours??"—"}h</span></span></div>
+    <div class="metric"><span class="lab">❤️ FC repos</span><span class="val">${chip(num(last.resting_hr),56,63,true)} <span style="color:#5E7299;font-size:12px">réf 54</span></span></div>
+    <div class="metric"><span class="lab">⚡ Body Battery</span><span class="val">${chip(num(last.body_battery),30,60)}</span></div>
+    <div class="metric"><span class="lab">😌 Stress</span><span class="val">${last.stress??"—"}</span></div>
+    <div class="metric"><span class="lab">🎯 Readiness</span><span class="val">${rdTxt}</span></div>
+    <div class="metric"><span class="lab">📈 VO2max</span><span class="val">${last.vo2max??"—"}</span></div>`;
+
+  // KPIs (moyennes + tendance vs 1ère moitié)
+  const half=Math.floor(entries.length/2);
+  const trend=(arr)=>{const a=avg(arr.slice(0,half)),b=avg(arr.slice(half));
+    if(a==null||b==null)return"";const dlt=+(b-a).toFixed(1);
+    const cl=dlt<0?"down":dlt>0?"up":"flat";const ar=dlt<0?"▼":dlt>0?"▲":"=";
+    return `<div class="d ${cl}">${ar} ${Math.abs(dlt)}</div>`;};
+  const trendRev=(arr)=>{const a=avg(arr.slice(0,half)),b=avg(arr.slice(half));
+    if(a==null||b==null)return"";const dlt=+(b-a).toFixed(1);
+    const cl=dlt<0?"up":dlt>0?"down":"flat";const ar=dlt<0?"▼":dlt>0?"▲":"=";
+    return `<div class="d ${cl}">${ar} ${Math.abs(dlt)} bpm</div>`;};
+  const active=entries.filter(e=>num(e.nb_activites)>0).length;
+  document.getElementById("kpi-grid").innerHTML=`
+    <div class="kpi b"><div class="v">${entries.length}</div><div class="l">jours suivis</div></div>
+    <div class="kpi g"><div class="v">${active}</div><div class="l">jours actifs</div></div>
+    <div class="kpi r"><div class="v">${avg(rhr.filter(num))??"—"}</div><div class="l">FC repos moy.</div>${trendRev(rhr)}</div>
+    <div class="kpi b"><div class="v">${avg(sleep.filter(num))??"—"}</div><div class="l">sommeil moy.</div>${trend(sleep)}</div>`;
+
+  // alertes
+  const al=[];
+  const gap=[...entries].reverse().findIndex(e=>num(e.nb_activites)>0);
+  if(gap>5)al.push(`Pas d'activité depuis ${gap} jours — vigilance désentraînement (les acquis récents partent vite).`);
+  if(num(last.resting_hr)>68)al.push(`FC repos haute (${last.resting_hr} bpm) — récup ou fatigue, vise une séance légère.`);
+  document.getElementById("alerts").innerHTML=al.map(a=>`<div class="alert">⚠️ ${a}</div>`).join("");
+
+  /* ── HISTORIQUE ── */
+  mkLine("c-rhr",L,rhr,"#EF4444","#EF444418",45,80);
+  mkLine("c-sleep",L,sleep,"#3B82F6","#3B82F618",0,100);
+  mkLine("c-bb",L,bb,"#F59E0B","#F59E0B18",0,100);
+  document.getElementById("tbl-body").innerHTML=[...entries].reverse().map(e=>`
+    <tr><td>${e.date.slice(5)}</td><td>${e.resting_hr??"—"}</td><td>${e.sleep_score??"—"}</td>
+    <td>${e.body_battery??"—"}</td><td>${e.stress??"—"}</td>
+    <td>${num(e.nb_activites)>0?'<span class="chip g">✓</span>':'<span style="color:#5E7299">·</span>'}</td></tr>`).join("");
+
+  /* ── RECO ── */
+  const recos=[...entries].reverse().filter(e=>e.reco&&e.reco.trim());
+  document.getElementById("reco-list").innerHTML=recos.length
+    ? recos.slice(0,30).map(e=>`<div class="reco"><div class="date">${e.date}</div><div class="body">${e.reco.replace(/</g,"&lt;")}</div></div>`).join("")
+    : `<div class="card"><div class="skeleton">Aucune recommandation enregistrée pour l'instant.<br><br>Elles apparaîtront ici dès le prochain passage de l'agent (chaque matin, lun-ven).</div></div>`;
+
+  /* ── PRÉVISIONS ── */
+  // trajectoire VO2max
+  const vpts=entries.map((e,i)=>({x:i,y:num(e.vo2max)})).filter(p=>p.y!=null);
+  const reg=linreg(vpts);
+  const lastIdx=entries.length-1;
+  // projeter jusqu'à ESM (en jours -> approx en index, 1 entrée ≈ 1 jour)
+  const daysToEsm=Math.round((ESM_DATE-new Date())/864e5);
+  const projLabels=[...L];
+  const histVo2=[...vo2];
+  const projVo2=new Array(vo2.length).fill(null);
+  const targetLine=new Array(vo2.length).fill(null);
+  if(reg){
+    projVo2[lastIdx]=vo2[lastIdx]??(reg.slope*lastIdx+reg.intercept);
+    const steps=Math.min(daysToEsm,180); // projette 6 mois max pour rester lisible
+    for(let k=1;k<=steps;k+=Math.ceil(steps/12)){
+      projLabels.push("+"+Math.round(k/30)+"m");
+      histVo2.push(null);
+      projVo2.push(+(reg.slope*(lastIdx+k)+reg.intercept).toFixed(1));
+      targetLine.push(56);
+    }
+  }
+  const el=document.getElementById("c-vo2");
+  new Chart(el,{type:"line",data:{labels:projLabels,datasets:[
+    {label:"VO2max mesuré",data:histVo2,borderColor:"#22C55E",backgroundColor:"#22C55E18",
+     fill:true,borderWidth:2,tension:.3,spanGaps:true,pointRadius:0},
+    {label:"Projection",data:projVo2,borderColor:"#A78BFA",borderDash:[5,4],
+     borderWidth:2,tension:.3,pointRadius:0,spanGaps:true},
+    {label:"Cible 56",data:targetLine,borderColor:"#F59E0B66",borderDash:[2,3],
+     borderWidth:1.5,pointRadius:0,spanGaps:true}]},
+    options:{responsive:true,maintainAspectRatio:false,
+    plugins:{legend:{display:true,labels:{boxWidth:10,font:{size:9}}}},
+    scales:{x:{ticks:{maxTicksLimit:7,maxRotation:0},grid:{display:false}},
+            y:{min:40,max:60,grid:{color:"#2A3C5E"}}}}});
+
+  // note VO2max
+  let vNote="Pas encore assez de mesures VO2max pour une tendance fiable (il en faut ~2-3 semaines).";
+  const vspan=vpts.length>=2?(vpts[vpts.length-1].x-vpts[0].x):0;
+  if(reg && vpts.length>=8 && vspan>=21){
+    const perMonth=+(reg.slope*30).toFixed(2);
+    const cur=vo2.filter(num).slice(-1)[0];
+    if(perMonth>0.05){
+      const monthsTo56=Math.ceil((56-cur)/(reg.slope*30));
+      const eta=new Date();eta.setMonth(eta.getMonth()+monthsTo56);
+      const fast=monthsTo56<4;
+      vNote=`Tendance récente : <b style="color:#22C55E">+${perMonth}/mois</b>. Extrapolée, la cible 56 tomberait vers <b>${eta.toLocaleDateString("fr-FR",{month:"long",year:"numeric"})}</b>`
+        +(monthsTo56<=24?" — dans les temps pour 2028.":" — rythme à tenir pour 2028.")
+        +(fast?" ⚠️ Fenêtre courte, projection trop optimiste : à confirmer sur plusieurs mois (le VO2max ne monte pas en ligne droite)."
+              :" Estimation indicative, pas une garantie.");
+    }else if(perMonth<-0.05){
+      vNote=`Tendance récente en baisse (${perMonth}/mois). Souvent normal en phase de volume lent (Garmin sous-estime quand tu cours lentement à FC haute). À surveiller sur 2-3 mois.`;
+    }else{
+      vNote=`VO2max stable récemment. La Phase 1 (base aérobie) prépare le terrain ; les vrais gains viendront avec l'intensité en Phase 2.`;
+    }
+  }
+  document.getElementById("vo2-note").innerHTML=vNote;
+
+  // forecast cards
+  const fcRhr=()=>{const r=linreg(entries.map((e,i)=>({x:i,y:num(e.resting_hr)})).filter(p=>p.y!=null));
+    if(!r)return null;const pm=+(r.slope*30).toFixed(1);
+    return {dir:pm<0?"up":pm>0?"down":"flat",val:(pm>0?"+":"")+pm+" bpm/mois",
+      good:pm<=0,txt:pm<0?"FC repos en baisse = forme qui monte":pm>0?"FC repos qui remonte — fatigue ?":"FC repos stable"};};
+  const fcAct=()=>{const wk=Math.max(1,entries.length/7);
+    const perWk=+(entries.filter(e=>num(e.nb_activites)>0).length/wk).toFixed(1);
+    return {dir:perWk>=3?"up":"flat",val:perWk+" /sem",good:perWk>=3,
+      txt:perWk>=3?"Régularité solide pour construire la base":"Vise 3-4 séances/sem pour progresser"};};
+  const f1=fcRhr(),f2=fcAct();
+  const row=(ic,bg,h,s,big,good)=>`<div class="fc">
+    <div class="ic" style="background:${bg}22;color:${bg}">${ic}</div>
+    <div class="t"><div class="h">${h}</div><div class="s">${s}</div></div>
+    <div class="big" style="color:${good?'#22C55E':'#F59E0B'}">${big}</div></div>`;
+  document.getElementById("forecast-card").innerHTML=
+    (f1?row("❤️","#EF4444","FC repos",f1.txt,f1.val,f1.good):"")+
+    row("🏃","#3B82F6","Fréquence d'entraînement",f2.txt,f2.val,f2.good);
+
+  // gap to goal
+  const curVo2=vo2.filter(num).slice(-1)[0]||48;
+  document.getElementById("gap-card").innerHTML=`
+    <div class="metric"><span class="lab">VMA testée</span><span class="val">13,0 <span style="color:#5E7299;font-size:12px">km/h</span></span></div>
+    <div class="metric"><span class="lab">VMA requise (11:30)</span><span class="val" style="color:#F59E0B">~16,5 <span style="color:#5E7299;font-size:12px">km/h</span></span></div>
+    <div class="metric"><span class="lab">VO2max actuel</span><span class="val">${curVo2}</span></div>
+    <div class="metric"><span class="lab">VO2max cible</span><span class="val" style="color:#F59E0B">~57</span></div>
+    <div class="note">Écart à combler sur 24 mois : ~+27% de VMA. Ambitieux mais cohérent si la régularité tient. Le levier court terme : courir ton 3000m plus près de ta VMA (aujourd'hui seulement 83%).</div>`;
+
+  // afficher
+  document.getElementById("status").style.display="none";
+  document.getElementById("apercu-content").style.display="block";
+}
+
+async function load(){
+  const sources=[
+    "historique.json?t="+Date.now(),
+    `https://raw.githubusercontent.com/${REPO}/${BRANCH}/historique.json?t=`+Date.now(),
+    `https://api.github.com/repos/${REPO}/contents/historique.json`
+  ];
+  for(const url of sources){
+    try{
+      const res=await fetch(url,{headers:url.includes("api.github")?{Accept:"application/vnd.github.v3+json"}:{}});
+      if(!res.ok)continue;
+      let json;
+      if(url.includes("api.github")){const m=await res.json();json=JSON.parse(atob(m.content.replace(/\n/g,"")));}
+      else{json=await res.json();}
+      const entries=json.entrees||[];
+      if(!entries.length){
+        document.getElementById("status").innerHTML=`<div class="skeleton">📭 Historique vide pour l'instant.<br><br>L'agent crée ta première entrée demain matin (10h30, lun-ven). Reviens après !</div>`;
+        return;
+      }
+      render(entries); return;
+    }catch(e){/* essaie la source suivante */}
+  }
+  document.getElementById("status").innerHTML=`<div class="skeleton">❌ Données introuvables.<br><br>Vérifie que le repo <b>${REPO}</b> est public et que <b>historique.json</b> existe (l'agent doit avoir tourné au moins une fois).</div>`;
+}
+
+// service worker
+if("serviceWorker" in navigator){
+  window.addEventListener("load",()=>navigator.serviceWorker.register("sw.js").catch(()=>{}));
+}
+load();
+</script>
+</body>
+</html>
