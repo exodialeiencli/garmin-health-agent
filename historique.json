@@ -1,0 +1,25 @@
+{
+  "entrees": [
+    {
+      "date": "2026-06-24",
+      "sleep_score": 84,
+      "sleep_hours": 8.6,
+      "body_battery": 90,
+      "stress": 18,
+      "resting_hr": 55,
+      "readiness": "N/A",
+      "vo2max": "N/A",
+      "nb_activites": 14
+    }
+  ],
+  "stats_30j": {
+    "fc_repos_moy": 55.0,
+    "sleep_score_moy": 84.0,
+    "body_battery_moy": 90.0,
+    "stress_moy": 18.0,
+    "readiness_moy": "N/A",
+    "nb_jours_actifs": 1,
+    "nb_jours_suivis": 1
+  },
+  "derniere_maj": "2026-06-24"
+}
