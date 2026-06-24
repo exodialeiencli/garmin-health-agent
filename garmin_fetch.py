@@ -1,5 +1,5 @@
 """
-garmin_fetch.py — Garmin Health Agent v3.1
+garmin_fetch.py — Garmin Health Agent v3.0
 ===========================================
 Agent santé/coaching ESM Saint-Cyr.
 Récupère les données Garmin du jour, lit le profil athlète + l'historique
@@ -8,39 +8,36 @@ persistant, génère une recommandation calibrée (Claude) et l'envoie sur Teleg
 Modèle d'entraînement : polarisé 80/20 (Seiler), prévention périostite (MTSS),
 anti-désentraînement (Mujika & Padilla). Détails dans profil_athlete.json.
 
-INSTALLATION : pip install -r requirements.txt
-SECRETS (GitHub Actions) :
-  Obligatoires : ANTHROPIC_KEY, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID
-  Auth Garmin (au choix) :
-    - GARMIN_TOKEN_BASE64  -> login par token (RECOMMANDÉ, évite le rate-limit 429)
-    - ou GARMIN_EMAIL + GARMIN_PASSWORD -> login direct (fonctionne mais plus fragile)
+INSTALLATION : pip install garminconnect anthropic requests
+SECRETS (GitHub Actions) : GARMIN_EMAIL, GARMIN_PASSWORD, ANTHROPIC_KEY,
+                           TELEGRAM_TOKEN, TELEGRAM_CHAT_ID
 
-Pour générer GARMIN_TOKEN_BASE64 (une seule fois, en local) : voir README.md
+Méthodes garminconnect vérifiées (v0.2.x) :
+  get_sleep_data(cdate) -> dict
+  get_body_battery(startdate, enddate=None) -> list[dict]   # ⚠️ liste par jour
+  get_stress_data(cdate) -> dict
+  get_training_readiness(cdate) -> list[dict]                # score récup Garmin
+  get_max_metrics(cdate) -> dict                             # VO2max
+  get_rhr_day(cdate) -> dict                                 # FC repos
+  get_activities(start, limit) -> list[dict]
 """
 
-import json, os, base64, tarfile, io, logging
+import json, os, requests, logging
 from datetime import date, timedelta
-from garminconnect import (
-    Garmin,
-    GarminConnectAuthenticationError,
-    GarminConnectConnectionError,
-    GarminConnectTooManyRequestsError,
-)
+from garminconnect import Garmin
 import anthropic
 
 logging.getLogger("garminconnect").setLevel(logging.ERROR)
 
 # ─── CONFIG ───────────────────────────────────────────────────────────────────
-GARMIN_EMAIL        = os.environ.get("GARMIN_EMAIL",        "")
-GARMIN_PASSWORD     = os.environ.get("GARMIN_PASSWORD",     "")
-GARMIN_TOKEN_BASE64 = os.environ.get("GARMIN_TOKEN_BASE64", "")
-ANTHROPIC_KEY       = os.environ.get("ANTHROPIC_KEY",       "")
-TELEGRAM_TOKEN      = os.environ.get("TELEGRAM_TOKEN",      "")
-TELEGRAM_CHAT_ID    = os.environ.get("TELEGRAM_CHAT_ID",    "")
+GARMIN_EMAIL     = os.environ.get("GARMIN_EMAIL",     "")
+GARMIN_PASSWORD  = os.environ.get("GARMIN_PASSWORD",  "")
+ANTHROPIC_KEY    = os.environ.get("ANTHROPIC_KEY",    "")
+TELEGRAM_TOKEN   = os.environ.get("TELEGRAM_TOKEN",   "")
+TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 
 PROFIL_FILE     = "profil_athlete.json"
 HISTORIQUE_FILE = "historique.json"
-TOKENSTORE      = os.path.expanduser("~/.garminconnect")
 MAX_ACTIVITES   = 14
 MODELE_CLAUDE   = "claude-haiku-4-5-20251001"
 
@@ -61,98 +58,68 @@ def kmh_to_pace(v):
     p = 60 / v
     return f"{int(p)}:{int(round((p % 1) * 60)):02d}/km"
 
-def last_number(seq):
-    """Renvoie le dernier élément numérique d'une liste, sinon None."""
-    if not isinstance(seq, list):
-        return None
-    nums = [x for x in seq if isinstance(x, (int, float)) and not isinstance(x, bool)]
-    return nums[-1] if nums else None
-
 
 # ─── TELEGRAM ─────────────────────────────────────────────────────────────────
-def send_telegram(message):
+def send_telegram(message, reply_markup=None):
     if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
         print("⚠️  Telegram non configuré (secrets manquants)")
         return
-    import requests
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    payload = {"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "Markdown"}
+    if reply_markup:
+        payload["reply_markup"] = json.dumps(reply_markup)
     try:
-        r = requests.post(url, json={"chat_id": TELEGRAM_CHAT_ID, "text": message,
-                                     "parse_mode": "Markdown"}, timeout=15)
+        r = requests.post(
+            f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
+            json=payload,
+            timeout=15,
+        )
         if r.status_code == 200:
             print("✅ Telegram envoyé")
         else:
-            # Le Markdown peut casser l'envoi : on retente en texte brut
-            print(f"⚠️  Telegram {r.status_code} ({r.text[:120]}), retry sans markdown")
-            requests.post(url, json={"chat_id": TELEGRAM_CHAT_ID, "text": message},
-                          timeout=15)
+            # Markdown peut casser ; on retente en texte brut
+            print(f"⚠️  Telegram {r.status_code}, retry sans markdown")
+            payload.pop("parse_mode", None)
+            requests.post(
+                f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
+                json=payload,
+                timeout=15,
+            )
     except Exception as e:
         print(f"⚠️  Telegram exception: {e}")
 
 
-# ─── AUTH GARMIN ──────────────────────────────────────────────────────────────
-def _setup_token_store():
-    """Décode GARMIN_TOKEN_BASE64 (archive tar.gz) dans ~/.garminconnect/.
-    Renvoie le chemin du tokenstore si réussi, sinon None."""
-    if not GARMIN_TOKEN_BASE64:
-        return None
-    try:
-        os.makedirs(TOKENSTORE, exist_ok=True)
-        raw = base64.b64decode(GARMIN_TOKEN_BASE64)
-        with tarfile.open(fileobj=io.BytesIO(raw), mode="r:gz") as tar:
-            tar.extractall(TOKENSTORE)
-        print("✅ Token Garmin décodé")
-        return TOKENSTORE
-    except Exception as e:
-        print(f"⚠️  Décodage GARMIN_TOKEN_BASE64 échoué: {e}")
-        return None
+# Boutons inline pour la dispo du jour (architecture deux temps)
+DISPO_KEYBOARD = {
+    "inline_keyboard": [[
+        {"text": "🟢 Beaucoup", "callback_data": "dispo:beaucoup"},
+        {"text": "🟡 Un peu",   "callback_data": "dispo:court"},
+        {"text": "🔴 Pas le temps", "callback_data": "dispo:rien"},
+    ]]
+}
 
 
+# ─── GARMIN ───────────────────────────────────────────────────────────────────
 def connect_garmin():
-    """Connexion Garmin. Priorité au token (robuste), fallback email/password."""
-    # 1) Login par token — pas de rate-limit, recommandé pour GitHub Actions
-    tokenstore = _setup_token_store()
-    if tokenstore:
-        try:
-            client = Garmin()
-            client.login(tokenstore)
-            print("✅ Connecté à Garmin (token)")
-            return client
-        except Exception as e:
-            print(f"⚠️  Login par token échoué ({e}), tentative email/password")
-
-    # 2) Fallback login email/password
     if not GARMIN_EMAIL or not GARMIN_PASSWORD:
-        print("❌ Aucun moyen d'auth Garmin (ni token ni email/password)")
+        print("❌ Identifiants Garmin manquants")
         return None
     try:
         client = Garmin(GARMIN_EMAIL, GARMIN_PASSWORD)
         client.login()
-        print("✅ Connecté à Garmin (email/password)")
+        print("✅ Connecté à Garmin Connect")
         return client
-    except GarminConnectTooManyRequestsError:
-        print("❌ Garmin: trop de requêtes (429). Garmin bloque temporairement les "
-              "logins répétés. Solution durable: passer au login par token "
-              "(GARMIN_TOKEN_BASE64, voir README).")
-        return None
-    except GarminConnectAuthenticationError as e:
-        print(f"❌ Garmin: identifiants refusés ({e})")
-        return None
-    except GarminConnectConnectionError as e:
-        print(f"❌ Garmin: erreur de connexion ({e})")
-        return None
     except Exception as e:
-        print(f"❌ Garmin: erreur inattendue ({e})")
+        print(f"❌ Erreur connexion Garmin: {e}")
         return None
 
 
-# ─── RÉCUPÉRATION DONNÉES ─────────────────────────────────────────────────────
 def fetch_data(client):
     today     = date.today().isoformat()
     yesterday = (date.today() - timedelta(days=1)).isoformat()
     data = {"_date": today}
 
     if client is None:
+        # Mode dégradé : pas de données mais le script ne crashe pas
         data.update({"sleep": {}, "body_battery": "N/A", "stress_avg": "N/A",
                      "readiness": "N/A", "vo2max": "N/A", "recent_activities": []})
         return data
@@ -183,31 +150,30 @@ def fetch_data(client):
     if not data["sleep"]:
         print("⚠️  Pas de données sommeil (montre non portée la nuit ?)")
 
-    # ── FC repos : fallback via get_heart_rates (clé top-level restingHeartRate)
+    # ── FC repos (fallback si absente du sommeil)
     if data["sleep"].get("resting_hr", "N/A") in ("N/A", None):
         try:
-            hr = client.get_heart_rates(today) or {}
-            rhr = hr.get("restingHeartRate")
-            if rhr:
-                data["sleep"]["resting_hr"] = rhr
-                print(f"✅ FC repos (fallback): {rhr} bpm")
+            rhr = client.get_rhr_day(today) or {}
+            metrics = rhr.get("allMetrics", {}).get("metricsMap", {})
+            rhr_list = metrics.get("WELLNESS_RESTING_HEART_RATE", [])
+            if rhr_list and rhr_list[0].get("value"):
+                data["sleep"]["resting_hr"] = int(rhr_list[0]["value"])
+                print(f"✅ FC repos (fallback): {data['sleep']['resting_hr']} bpm")
         except Exception as e:
             print(f"⚠️  FC repos fallback: {e}")
 
-    # ── Body Battery : liste par jour ; sous-tableaux [ts, (status), niveau]
+    # ── Body Battery : get_body_battery renvoie une LISTE par jour
     data["body_battery"] = "N/A"
     try:
         bb = client.get_body_battery(today, today)
-        if bb and isinstance(bb, list) and isinstance(bb[0], dict):
-            day0 = bb[0]
+        if bb and isinstance(bb, list):
+            day0 = bb[0] if isinstance(bb[0], dict) else {}
+            # La dernière mesure de la journée se trouve dans bodyBatteryValuesArray
             arr = day0.get("bodyBatteryValuesArray") or []
-            if arr:
-                val = last_number(arr[-1])           # dernier nombre = niveau actuel
-                if val is not None:
-                    data["body_battery"] = val
-            if data["body_battery"] == "N/A":
-                data["body_battery"] = (day0.get("charged")
-                                        or day0.get("bodyBatteryLevel") or "N/A")
+            if arr and isinstance(arr[-1], list) and len(arr[-1]) >= 2:
+                data["body_battery"] = arr[-1][1]   # [timestamp, niveau]
+            else:
+                data["body_battery"] = (day0.get("charged") or day0.get("bodyBatteryLevel") or "N/A")
         print(f"✅ Body Battery: {data['body_battery']}")
     except Exception as e:
         print(f"⚠️  Body Battery: {e}")
@@ -221,30 +187,26 @@ def fetch_data(client):
     except Exception as e:
         print(f"⚠️  Stress: {e}")
 
-    # ── Training Readiness (absent sur Venu 2 et appareils sans la métrique -> N/A)
+    # ── Training Readiness (score de récup calculé par Garmin — plus fiable que BB seul)
     data["readiness"] = "N/A"
     try:
         tr = client.get_training_readiness(today)
-        if tr and isinstance(tr, list) and isinstance(tr[0], dict) and tr[0].get("score") is not None:
-            data["readiness"] = {"score": tr[0].get("score"), "level": tr[0].get("level", "")}
+        if tr and isinstance(tr, list) and tr[0].get("score") is not None:
+            data["readiness"] = {
+                "score": tr[0].get("score"),
+                "level": tr[0].get("level", ""),
+            }
             print(f"✅ Training Readiness: {data['readiness']['score']}")
-        else:
-            print("ℹ️  Training Readiness non disponible (normal sur Venu 2)")
     except Exception as e:
-        print(f"ℹ️  Training Readiness indisponible: {e}")
+        print(f"⚠️  Training Readiness (non dispo sur tous appareils): {e}")
 
-    # ── VO2max : la réponse peut être une LISTE [{generic:..}] OU un DICT {generic:..}
+    # ── VO2max
     data["vo2max"] = "N/A"
     try:
         mm = client.get_max_metrics(today)
-        entry = None
-        if isinstance(mm, list) and mm:
-            entry = mm[0] if isinstance(mm[0], dict) else None
-        elif isinstance(mm, dict):
-            entry = mm
-        if entry and isinstance(entry.get("generic"), dict):
-            data["vo2max"] = entry["generic"].get("vo2MaxValue", "N/A")
-        print(f"✅ VO2max: {data['vo2max']}")
+        if mm and isinstance(mm, list) and mm[0].get("generic"):
+            data["vo2max"] = mm[0]["generic"].get("vo2MaxValue", "N/A")
+            print(f"✅ VO2max: {data['vo2max']}")
     except Exception as e:
         print(f"⚠️  VO2max: {e}")
 
@@ -252,17 +214,13 @@ def fetch_data(client):
     data["recent_activities"] = []
     try:
         raw_acts = client.get_activities(0, MAX_ACTIVITES + 12) or []
-        if isinstance(raw_acts, dict):              # certaines versions enveloppent
-            raw_acts = raw_acts.get("activityList", []) or []
         for a in raw_acts:
             dur_min = round((a.get("duration") or 0) / 60)
             if dur_min < 8:
                 continue
-            atype = a.get("activityType", {})
-            atype = atype.get("typeKey", "unknown") if isinstance(atype, dict) else str(atype)
             data["recent_activities"].append({
                 "date":     (a.get("startTimeLocal") or "")[:10],
-                "type":     atype,
+                "type":     a.get("activityType", {}).get("typeKey", "unknown"),
                 "duration": dur_min,
                 "distance": round((a.get("distance") or 0) / 1000, 2),
                 "avg_hr":   a.get("averageHR"),
@@ -315,6 +273,9 @@ def save_historique(hist, data):
     rd = data.get("readiness", "N/A")
     rd_score = rd.get("score") if isinstance(rd, dict) else "N/A"
 
+    # On préserve dispo + feedbacks éventuellement déjà écrits par le listener aujourd'hui
+    existant = next((e for e in hist["entrees"] if e.get("date") == today), {})
+
     entree = {
         "date":         today,
         "sleep_score":  s.get("score", "N/A"),
@@ -325,7 +286,9 @@ def save_historique(hist, data):
         "readiness":    rd_score,
         "vo2max":       data.get("vo2max", "N/A"),
         "nb_activites": len(data.get("recent_activities", [])),
-        "reco":         data.get("reco", ""),
+        # Champs pilotés par le listener Telegram (préservés s'ils existent déjà)
+        "dispo":        existant.get("dispo"),
+        "feedbacks":    existant.get("feedbacks", []),
     }
 
     hist["entrees"] = [e for e in hist["entrees"] if e.get("date") != today]
@@ -336,7 +299,7 @@ def save_historique(hist, data):
     recent = [e for e in hist["entrees"] if e.get("date", "") >= cutoff]
 
     def avg(lst, key):
-        vals = [e[key] for e in lst if isinstance(e.get(key), (int, float)) and not isinstance(e.get(key), bool)]
+        vals = [e[key] for e in lst if isinstance(e.get(key), (int, float))]
         return round(sum(vals) / len(vals), 1) if vals else "N/A"
 
     hist["stats_30j"] = {
@@ -358,8 +321,13 @@ def save_historique(hist, data):
     return hist
 
 
-# ─── PROMPT CLAUDE ────────────────────────────────────────────────────────────
-def build_prompt(data, profil, hist):
+# ─── RECOMMANDATION CLAUDE ────────────────────────────────────────────────────
+def build_prompt(data, profil, hist, mode="brief", dispo=None):
+    """
+    mode='brief'  : message du matin = bilan santé + invitation à donner sa dispo.
+                    PAS de séance imposée (architecture deux temps).
+    mode='seance' : génération de LA séance adaptée à la dispo reçue (dispo='beaucoup'|'court'|'rien').
+    """
     today       = date.today()
     jour_sem    = today.strftime("%A")
     est_weekend = jour_sem in ("Saturday", "Sunday")
@@ -373,11 +341,19 @@ def build_prompt(data, profil, hist):
     tempo = kmh_to_pace(vma * 0.85)
     vmax  = kmh_to_pace(vma)
 
-    s      = data.get("sleep", {})
-    rd     = data.get("readiness", "N/A")
-    rd_str = f"{rd['score']}/100 ({rd.get('level','')})" if isinstance(rd, dict) else "N/A (non dispo sur Venu 2)"
-    stats  = hist.get("stats_30j", {})
-    acts   = data.get("recent_activities", [])
+    s       = data.get("sleep", {})
+    rd      = data.get("readiness", "N/A")
+    rd_str  = f"{rd['score']}/100 ({rd.get('level','')})" if isinstance(rd, dict) else "N/A"
+    stats   = hist.get("stats_30j", {})
+    acts    = data.get("recent_activities", [])
+
+    # Feedbacks récents (3 derniers jours) pour contexte
+    cutoff_fb = (today - timedelta(days=3)).isoformat()
+    feedbacks_recents = []
+    for e in hist.get("entrees", []):
+        if e.get("date", "") >= cutoff_fb and e.get("feedbacks"):
+            for fb in e["feedbacks"]:
+                feedbacks_recents.append(f"{e['date']}: {fb}")
 
     profil_resume = (
         f"Mathurin, 22 ans, objectif ESM Saint-Cyr 2028 — épreuve critique 3000m (cible 11:30).\n"
@@ -387,27 +363,43 @@ def build_prompt(data, profil, hist):
         f"Forts: sprint, tractions. Faibles: vitesse spécifique 3000m, base aérobie, abdos ESM."
     )
 
-    consignes_jour = (
-        "WEEKEND — Mathurin ne s'entraîne quasi jamais le weekend (4% sur 5 ans). "
-        "Propose UNIQUEMENT une routine bien-être de 15-20 min : mobilité hanches/chevilles, "
-        "étirements mollets (prévention périostite), gainage léger, respiration. Pas de séance structurée."
-        if est_weekend else
-        "Jour d'entraînement (lun-ven). Phase 1 = construction base aérobie POLARISÉE: "
-        "~90% du travail en Z2 facile (allures ci-dessous), accélérations courtes possibles. "
-        "PAS de fractionné intense (base pas encore prête). Renforcement mollets/tibias = prévention périostite obligatoire."
-    )
+    # ── Consignes selon mode + dispo ──────────────────────────────────────────
+    dispo_txt = {
+        "beaucoup": "Mathurin a BEAUCOUP de temps aujourd'hui → séance complète possible (bloc principal long + muscu + étirements).",
+        "court":    "Mathurin a PEU de temps aujourd'hui → format court et efficace (séance minimale de maintien, anti-désentraînement Mujika: réduire volume mais garder qualité).",
+        "rien":     "Mathurin n'a PAS le temps de s'entraîner aujourd'hui → propose UNIQUEMENT 10-15 min bien-être/mobilité/étirements (focus mollets-tibias). Aucune séance structurée.",
+    }
+
+    if est_weekend:
+        consignes_jour = (
+            "WEEKEND — Mathurin ne s'entraîne quasi jamais le weekend (4% sur 5 ans). "
+            "Propose UNIQUEMENT une routine bien-être de 15-20 min : mobilité hanches/chevilles, "
+            "étirements mollets (prévention périostite), gainage léger, respiration. Pas de séance structurée."
+        )
+    elif mode == "brief":
+        consignes_jour = (
+            "MODE BRIEF (message du matin, architecture deux temps) : tu fais UNIQUEMENT le bilan santé "
+            "et tu INVITES Mathurin à indiquer sa dispo du jour (beaucoup / court / pas le temps) via les boutons. "
+            "NE PROPOSE PAS encore de séance détaillée — elle sera générée après sa réponse. "
+            "Tu peux juste teaser l'orientation du jour en une phrase (ex: 'récup bonne, on pourra pousser un peu')."
+        )
+    else:  # mode == 'seance'
+        consignes_jour = (
+            "MODE SÉANCE (Mathurin a donné sa dispo) : Phase 1 = base aérobie POLARISÉE, ~90% Z2 facile, "
+            "PAS de fractionné intense. Renforcement mollets/tibias = prévention périostite obligatoire.\n"
+            + dispo_txt.get(dispo, "Dispo non précisée → propose une séance Z2 standard modérée.")
+        )
 
     prompt = f"""Tu es le coach sportif personnel de Mathurin. Modèle d'entraînement: POLARISÉ 80/20 (Seiler), prévention périostite (MTSS), anti-désentraînement (Mujika).
 
 == PROFIL ==
 {profil_resume}
 
-== ZONES (VMA TESTÉE {vma} km/h, le 23/06/2026) ==
-- Z2 endurance (le pain quotidien): PILOTER PAR LA FC, plafond ~150 bpm (test parlant). Allure théorique {z2_hi}-{z2_lo}, MAIS au test du 23/06 le 9 km/h (6:40) le mettait déjà en Z3 -> son allure VRAIMENT facile actuelle est ~7:00-7:30/km. C'est la FC qui commande, pas le chrono. C'est ICI que se construit la base.
+== ZONES (VMA {vma} km/h) ==
+- Z2 endurance (le pain quotidien): {z2_hi} à {z2_lo}, FC ~135-150 bpm. C'est ICI que se construit la base.
 - Tempo/seuil: {tempo}, FC ~160-170 (Phase 2, pas maintenant)
 - VMA: {vmax} (Phase 2+)
-- Cadence: viser ~165-170 ppm même en footing lent (actuellement 161) -> meilleure économie + moins d'impact tibial.
-⚠️ PIÈGE À ÉVITER: la "zone grise" (courir le facile trop dur). Les jours Z2 doivent être VRAIMENT faciles, quitte à ralentir fort.
+⚠️ PIÈGE À ÉVITER: la "zone grise" (courir le facile trop dur). Les jours Z2 doivent être VRAIMENT faciles.
 
 == DONNÉES DU JOUR ({today.strftime('%A %d/%m/%Y')}) ==
 Sommeil: {s.get('score','N/A')}/100 — {s.get('duration_hours','N/A')}h (profond {s.get('deep_minutes','N/A')}min, REM {s.get('rem_minutes','N/A')}min)
@@ -420,26 +412,50 @@ Tendances 30j: FC repos moy {stats.get('fc_repos_moy','N/A')} | Readiness moy {s
 14 dernières activités:
 {json.dumps(acts, indent=1, ensure_ascii=False) if acts else "Aucune activité récente — attention reprise progressive (anti-périostite)."}
 
+Feedbacks récents de Mathurin (3 derniers jours, ressenti/douleurs/exécution — PRENDS-EN COMPTE):
+{chr(10).join(feedbacks_recents) if feedbacks_recents else "Aucun feedback récent."}
+
 == CONTEXTE JOUR ==
 {consignes_jour}
 
-== FORMAT DE RÉPONSE (Telegram, texte simple, concis) ==
-1. RÉCUP: niveau (EXCELLENT/BON/MOYEN/FAIBLE) en t'appuyant en priorité sur le Training Readiness s'il existe, sinon Body Battery + sommeil + FC repos. 1-2 phrases.
-2. SÉANCE DU JOUR: {'routine bien-être détaillée' if est_weekend else 'le bloc principal recommandé avec paramètres précis (durée, allure en min/km RÉALISTE, FC cible)'}.
-{'' if est_weekend else '3. Si récup BON/EXCELLENT: tu peux proposer 1 bloc cardio + 1 bloc muscu le même jour (haut du corps = tractions/abdos/pompes, ou bas = squats/fentes/MOLLETS pour prévention).'}
-{'' if est_weekend else '4. RAPPEL PÉRIOSTITE: si une activité récente montre une grosse charge de course, privilégie vélo/repos aujourd_hui. Toute douleur tibia = stop course.'}
-{'3. Un mot encourageant bref.' if est_weekend else '5. ALERTE si: FC repos > 68, Readiness < 35, ou gap d_activité > 6 jours.'}
+== ÉTIREMENTS & MOBILITÉ (structure à 3 temps — module selon la séance faite/prévue) ==
+PRINCIPE: on couvre TOUJOURS tout le corps, mais on RENFORCE le focus sur les muscles sollicités par la séance du jour. Mollets + tibial = PRIORITAIRES dans tous les cas (anti-périostite, non négociable).
 
-Allures réalistes: en Z2 piloté par la FC (plafond ~150 bpm), Mathurin tourne actuellement ~7:00-7:30/km. Ne JAMAIS prescrire de Z2 plus rapide que ~6:30/km. Pas de markdown lourd."""
+• AVANT séance → MOBILITÉ DYNAMIQUE seulement (jamais de statique long qui réduit la force):
+  cercles chevilles, montées de genoux, talons-fesses, balancements de jambes, rotations hanches/épaules. 5 min.
+
+• APRÈS séance → STATIQUE tenu 30-45s, focus MODULÉ selon ce qui a été fait:
+  - Socle systématique (tout le corps, 1 étirement court/groupe): mollets+tibial (PRIORITÉ), ischios, quadriceps, fléchisseurs hanche, épaules/dos.
+  - Si COURSE (Z2): focus chaîne postérieure → mollets ++, ischios ++, fléchisseurs hanche, bandelette IT (tenus plus longtemps).
+  - Si HAUT DU CORPS (tractions/pompes): focus dorsaux, biceps, avant-bras, pecs, épaules — MAIS garder le socle jambes.
+  - Si RENFO JAMBES/MOLLETS: focus quadriceps, fessiers, mollets en excentrique léger. Surveiller récup tibiale.
+
+• JOUR OFF / BIEN-ÊTRE → routine étirements COMPLÈTE tout le corps + mobilité approfondie (10-15 min).
+
+RAPPEL anti-périostite: pour les mollets, le RENFORCEMENT EXCENTRIQUE (déjà au programme) prime sur l'étirement statique. Statique = après séance ou en journée séparée, jamais en pré-séance.
+
+== FORMAT DE RÉPONSE (Telegram, texte simple, concis) ==
+{'''MODE BRIEF — réponds en 2 parties SEULEMENT:
+1. RÉCUP: niveau (EXCELLENT/BON/MOYEN/FAIBLE) à partir du Training Readiness si dispo, sinon Body Battery + sommeil + FC repos. 1-2 phrases.
+2. ORIENTATION: une phrase qui teste l'orientation du jour selon la récup (ex: "récup bonne, on pourra pousser" / "récup moyenne, on restera léger"), puis invite explicitement à choisir la dispo du jour via les boutons ci-dessous. NE DÉTAILLE PAS de séance.
+5. ALERTE si: FC repos > 68, Readiness < 35, ou gap d_activité > 6 jours.''' if (mode == "brief" and not est_weekend) else '''
+1. RÉCUP: niveau (EXCELLENT/BON/MOYEN/FAIBLE) en t'appuyant en priorité sur le Training Readiness s'il existe, sinon Body Battery + sommeil + FC repos. 1-2 phrases.
+2. SÉANCE DU JOUR: ''' + ('routine bien-être détaillée' if est_weekend else 'le bloc principal adapté à la DISPO indiquée, avec paramètres précis (durée, allure en min/km RÉALISTE, FC cible)') + '''.
+''' + ('' if est_weekend else '3. Si récup BON/EXCELLENT et dispo le permet: tu peux proposer 1 bloc cardio + 1 bloc muscu (haut du corps = tractions/abdos/pompes, ou bas = squats/fentes/MOLLETS pour prévention).') + '''
+''' + ('' if est_weekend else '4. RAPPEL PÉRIOSTITE: si une activité récente montre une grosse charge de course, privilégie vélo/repos. Toute douleur tibia = stop course.') + '''
+ÉTIREMENTS: ''' + ('routine étirements COMPLÈTE tout le corps (jour off) + mobilité' if est_weekend else 'termine TOUJOURS par un bloc étirements modulé selon la séance (socle tout le corps + focus muscles sollicités, mollets/tibial prioritaires). Précise avant=dynamique / après=statique.') + '''
+''' + ('Un mot encourageant bref.' if est_weekend else '5. ALERTE si: FC repos > 68, Readiness < 35, ou gap d_activité > 6 jours.')}
+
+Allures réalistes seulement (ce niveau court actuellement ~5:30-6:45/km selon l'intensité — JAMAIS 4:30/km en Z2). Pas de markdown lourd."""
     return prompt, vma, vma_status, est_weekend, jour_sem
 
 
-def get_recommendation(data, profil, hist):
+def get_recommendation(data, profil, hist, mode="brief", dispo=None):
     if not ANTHROPIC_KEY:
         print("⚠️  Clé Anthropic absente — pas de reco générée")
         return None
 
-    prompt, vma, vma_status, est_weekend, jour_sem = build_prompt(data, profil, hist)
+    prompt, vma, vma_status, est_weekend, jour_sem = build_prompt(data, profil, hist, mode, dispo)
 
     try:
         client = anthropic.Anthropic(api_key=ANTHROPIC_KEY)
@@ -453,7 +469,7 @@ def get_recommendation(data, profil, hist):
         return None
 
     print("\n" + "=" * 54)
-    print("🤖 RECOMMANDATION COACH IA")
+    print(f"🤖 RECOMMANDATION COACH IA (mode={mode}, dispo={dispo})")
     print("=" * 54)
     print(reco)
     print("=" * 54)
@@ -463,30 +479,44 @@ def get_recommendation(data, profil, hist):
     rd_str = f"{rd['score']}/100" if isinstance(rd, dict) else "N/A"
     phys = profil.get("physiologie", {})
 
-    msg = (
-        f"🏃 *Bilan {date.today().strftime('%d/%m/%Y')}* — {jour_sem}\n\n"
-        f"🌙 Sommeil : {s.get('score','N/A')}/100 ({s.get('duration_hours','N/A')}h)\n"
-        f"❤️ FC repos : {s.get('resting_hr','N/A')} bpm\n"
-        f"⚡ Body Battery : {data.get('body_battery','N/A')}/100\n"
-        f"🎯 Readiness : {rd_str}\n"
-        f"📈 VO2max : {data.get('vo2max', phys.get('vo2max_actuel','?'))} | VMA : {vma} km/h ({vma_status})\n\n"
-        f"━━━━━━━━━━━━━━━\n\n{reco}"
-    )
-    send_telegram(msg)
+    # En mode BRIEF (jour de semaine), on affiche le bilan + boutons dispo.
+    # En mode SÉANCE ou weekend, on envoie directement la séance/routine, sans boutons.
+    if mode == "brief" and not est_weekend:
+        msg = (
+            f"🏃 *Bilan {date.today().strftime('%d/%m/%Y')}* — {jour_sem}\n\n"
+            f"🌙 Sommeil : {s.get('score','N/A')}/100 ({s.get('duration_hours','N/A')}h)\n"
+            f"❤️ FC repos : {s.get('resting_hr','N/A')} bpm\n"
+            f"⚡ Body Battery : {data.get('body_battery','N/A')}/100\n"
+            f"🎯 Readiness : {rd_str}\n"
+            f"📈 VO2max : {data.get('vo2max', phys.get('vo2max_actuel','?'))} | VMA : {vma} km/h ({vma_status})\n\n"
+            f"━━━━━━━━━━━━━━━\n\n{reco}\n\n"
+            f"👉 *Tu as combien de temps aujourd'hui ?*"
+        )
+        send_telegram(msg, reply_markup=DISPO_KEYBOARD)
+    else:
+        titre = "Séance du jour" if not est_weekend else "Routine bien-être"
+        msg = (
+            f"🏃 *{titre} {date.today().strftime('%d/%m/%Y')}* — {jour_sem}\n\n{reco}"
+        )
+        send_telegram(msg)
     return reco
 
 
 # ─── MAIN ─────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    print("🏃 Garmin Health Agent v3.1\n")
+    # MODE et DISPO peuvent être passés par le listener Telegram via variables d'env.
+    # mode='brief' (défaut, message matin) ou 'seance' (après réponse dispo).
+    MODE  = os.environ.get("AGENT_MODE", "brief")
+    DISPO = os.environ.get("AGENT_DISPO") or None
+
+    print(f"🏃 Garmin Health Agent v3.2  (mode={MODE}, dispo={DISPO})\n")
 
     profil = {}
     if os.path.exists(PROFIL_FILE):
         try:
             profil = json.load(open(PROFIL_FILE))
-            ph = profil.get("physiologie", {})
-            print(f"✅ Profil chargé (VO2max {ph.get('vo2max_actuel','?')}, "
-                  f"VMA {ph.get('vma_testee_kmh') or ph.get('vma_estimee_kmh','?')})")
+            print(f"✅ Profil chargé (VO2max {profil.get('physiologie',{}).get('vo2max_actuel','?')}, "
+                  f"VMA {profil.get('physiologie',{}).get('vma_testee_kmh') or profil.get('physiologie',{}).get('vma_estimee_kmh','?')})")
         except Exception as e:
             print(f"⚠️  Profil illisible: {e}")
     else:
@@ -500,17 +530,4 @@ if __name__ == "__main__":
     print_data(data)
 
     hist = save_historique(hist, data)
-    reco = get_recommendation(data, profil, hist)
-
-    # Persister la reco du jour dans l'historique (pour l'app mobile)
-    if reco:
-        today = date.today().isoformat()
-        for e in hist["entrees"]:
-            if e.get("date") == today:
-                e["reco"] = reco
-                break
-        try:
-            json.dump(hist, open(HISTORIQUE_FILE, "w"), indent=2, ensure_ascii=False)
-            print("✅ Reco du jour sauvegardée dans l'historique")
-        except Exception as ex:
-            print(f"⚠️  Sauvegarde reco: {ex}")
+    get_recommendation(data, profil, hist, mode=MODE, dispo=DISPO)
