@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard — Mathurin ESM 2028</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root {
+    --navy: #1B2A4A; --blue: #2563EB; --lblue: #DBEAFE;
+    --green: #16A34A; --lgreen: #DCFCE7;
+    --orange: #EA580C; --lorange: #FFF7ED;
+    --red: #DC2626; --grey: #94A3B8; --lgrey: #F1F5F9;
+    --bg: #F8FAFC; --card: #FFFFFF;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+         background: var(--bg); color: #1E293B; }
+
+  header {
+    background: var(--navy); color: white; padding: 18px 28px;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  header h1 { font-size: 1.25rem; font-weight: 700; }
+  header span { font-size: 0.8rem; color: #93C5FD; }
+
+  .container { max-width: 1100px; margin: 0 auto; padding: 24px 16px; }
+
+  /* KPI strip */
+  .kpis { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 24px; }
+  .kpi { background: var(--card); border-radius: 10px; padding: 14px 10px;
+          text-align: center; box-shadow: 0 1px 3px rgba(0,0,0,.07); }
+  .kpi .val { font-size: 1.6rem; font-weight: 800; line-height: 1.1; }
+  .kpi .lbl { font-size: 0.72rem; color: var(--grey); margin-top: 4px; }
+  .kpi.blue  .val { color: var(--blue); }
+  .kpi.green .val { color: var(--green); }
+  .kpi.orange .val { color: var(--orange); }
+
+  /* Cards */
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+  .grid1 { margin-bottom: 16px; }
+  .card { background: var(--card); border-radius: 12px; padding: 18px 20px;
+           box-shadow: 0 1px 3px rgba(0,0,0,.07); }
+  .card h2 { font-size: 0.85rem; font-weight: 700; color: var(--navy);
+              margin-bottom: 14px; text-transform: uppercase; letter-spacing: .04em; }
+  .chart-wrap { position: relative; height: 180px; }
+  .chart-wrap.tall { height: 220px; }
+
+  /* Table */
+  table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+  th { background: var(--navy); color: white; padding: 7px 10px; text-align: left; font-weight: 600; }
+  td { padding: 6px 10px; border-bottom: 1px solid #E2E8F0; }
+  tr:nth-child(even) td { background: var(--lgrey); }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 99px; font-size: 0.72rem; font-weight: 700; }
+  .badge.g { background: var(--lgreen); color: var(--green); }
+  .badge.o { background: var(--lorange); color: var(--orange); }
+  .badge.r { background: #FEE2E2; color: var(--red); }
+  .badge.b { background: var(--lblue); color: var(--blue); }
+
+  /* Status */
+  #status { text-align: center; padding: 60px 20px; color: var(--grey); font-size: 0.9rem; }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+          background: var(--green); margin-right: 6px; animation: pulse 1.5s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+  /* Alerts */
+  .alert { background: #FEF3C7; border-left: 4px solid #F59E0B;
+            padding: 10px 14px; border-radius: 6px; font-size: 0.83rem;
+            color: #92400E; margin-bottom: 16px; }
+
+  /* Progress bars ESM */
+  .esm-grid { display: grid; gap: 10px; }
+  .esm-row { display: flex; align-items: center; gap: 10px; font-size: 0.82rem; }
+  .esm-label { width: 130px; flex-shrink: 0; color: var(--grey); }
+  .esm-bar-wrap { flex: 1; background: var(--lgrey); border-radius: 99px; height: 10px; overflow: hidden; }
+  .esm-bar { height: 100%; border-radius: 99px; transition: width .6s ease; }
+  .esm-score { width: 50px; text-align: right; font-weight: 700; }
+
+  footer { text-align: center; padding: 24px; font-size: 0.75rem; color: var(--grey); }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>🏃 Mathurin · Dashboard ESM 2028</h1>
+    <span id="last-update">Chargement…</span>
+  </div>
+  <div style="text-align:right">
+    <div style="font-size:.85rem;font-weight:700;color:#93C5FD">VMA 13,0 km/h · VO2max 48</div>
+    <div style="font-size:.75rem;color:#64748B">Objectif : 16/20 · 3000m en 11:30</div>
+  </div>
+</header>
+
+<div class="container">
+  <div id="status"><span class="dot"></span>Chargement des données…</div>
+  <div id="main" style="display:none">
+
+    <!-- ALERTES -->
+    <div id="alerts"></div>
+
+    <!-- KPIs -->
+    <div class="kpis">
+      <div class="kpi blue">
+        <div class="val" id="k-days">—</div>
+        <div class="lbl">Jours suivis</div>
+      </div>
+      <div class="kpi green">
+        <div class="val" id="k-rhr">—</div>
+        <div class="lbl">FC repos moy. (bpm)</div>
+      </div>
+      <div class="kpi blue">
+        <div class="val" id="k-sleep">—</div>
+        <div class="lbl">Score sommeil moy.</div>
+      </div>
+      <div class="kpi orange">
+        <div class="val" id="k-bb">—</div>
+        <div class="lbl">Body Battery moy.</div>
+      </div>
+      <div class="kpi green">
+        <div class="val" id="k-active">—</div>
+        <div class="lbl">Jours actifs</div>
+      </div>
+    </div>
+
+    <!-- GRAPHIQUES LIGNE 1 -->
+    <div class="grid2">
+      <div class="card">
+        <h2>❤️ FC Repos (bpm)</h2>
+        <div class="chart-wrap"><canvas id="c-rhr"></canvas></div>
+      </div>
+      <div class="card">
+        <h2>🌙 Score Sommeil</h2>
+        <div class="chart-wrap"><canvas id="c-sleep"></canvas></div>
+      </div>
+    </div>
+
+    <!-- GRAPHIQUES LIGNE 2 -->
+    <div class="grid2">
+      <div class="card">
+        <h2>⚡ Body Battery</h2>
+        <div class="chart-wrap"><canvas id="c-bb"></canvas></div>
+      </div>
+      <div class="card">
+        <h2>😌 Stress moyen</h2>
+        <div class="chart-wrap"><canvas id="c-stress"></canvas></div>
+      </div>
+    </div>
+
+    <!-- VO2MAX + ACTIVITÉ -->
+    <div class="grid2">
+      <div class="card">
+        <h2>📈 VO2max</h2>
+        <div class="chart-wrap"><canvas id="c-vo2"></canvas></div>
+      </div>
+      <div class="card">
+        <h2>🏃 Activité quotidienne</h2>
+        <div class="chart-wrap"><canvas id="c-act"></canvas></div>
+      </div>
+    </div>
+
+    <!-- OBJECTIFS ESM -->
+    <div class="card grid1">
+      <h2>🎯 Progression ESM 2028</h2>
+      <div class="esm-grid" id="esm-progress"></div>
+    </div>
+
+    <!-- TABLEAU HISTORIQUE -->
+    <div class="card grid1">
+      <h2>📋 Historique complet</h2>
+      <div style="overflow-x:auto; max-height:320px; overflow-y:auto;">
+        <table id="tbl">
+          <thead><tr>
+            <th>Date</th><th>FC repos</th><th>Sommeil</th>
+            <th>Body Battery</th><th>Stress</th><th>VO2max</th><th>Actif</th>
+          </thead>
+          <tbody id="tbl-body"></tbody>
+        </table>
+      </div>
+    </div>
+
+  </div><!-- /main -->
+</div>
+
+<footer>Garmin Health Agent · ESM Saint-Cyr 2028 · Données mises à jour chaque matin</footer>
+
+<script>
+// ─── CONFIG ────────────────────────────────────────────────────────────────
+const REPO  = "exodialeiencli/garmin-health-agent";
+const FILE  = "historique.json";
+const API   = `https://api.github.com/repos/${REPO}/contents/${FILE}`;
+
+// ─── CHART FACTORY ─────────────────────────────────────────────────────────
+function lineChart(id, labels, datasets, opts = {}) {
+  const ctx = document.getElementById(id);
+  if (!ctx) return;
+  new Chart(ctx, {
+    type: "line",
+    data: { labels, datasets },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: datasets.length > 1,
+                            labels: { boxWidth: 10, font: { size: 10 } } },
+                 tooltip: { mode: "index", intersect: false } },
+      scales: {
+        x: { ticks: { maxTicksLimit: 8, font: { size: 10 }, maxRotation: 0 },
+              grid: { display: false } },
+        y: { ticks: { font: { size: 10 } }, min: opts.min, max: opts.max,
+              grid: { color: "#F1F5F9" } }
+      },
+      elements: { point: { radius: 2, hoverRadius: 5 }, line: { tension: 0.3 } },
+    }
+  });
+}
+
+function barChart(id, labels, data, color) {
+  const ctx = document.getElementById(id);
+  if (!ctx) return;
+  new Chart(ctx, {
+    type: "bar",
+    data: { labels, datasets: [{ data, backgroundColor: color, borderRadius: 3 }] },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { maxTicksLimit: 8, font: { size: 10 }, maxRotation: 0 },
+              grid: { display: false } },
+        y: { ticks: { font: { size: 10 } }, grid: { color: "#F1F5F9" } }
+      }
+    }
+  });
+}
+
+// ─── HELPERS ───────────────────────────────────────────────────────────────
+const avg = arr => {
+  const nums = arr.filter(v => typeof v === "number" && !isNaN(v));
+  return nums.length ? (nums.reduce((a,b) => a+b, 0) / nums.length).toFixed(1) : "—";
+};
+const fmt = v => (typeof v === "number" && !isNaN(v)) ? v : null;
+
+function badge(v, low, high) {
+  if (v === null || v === "N/A" || v === "") return "—";
+  if (typeof v !== "number") return v;
+  if (v <= low)  return `<span class="badge r">${v}</span>`;
+  if (v >= high) return `<span class="badge g">${v}</span>`;
+  return `<span class="badge b">${v}</span>`;
+}
+
+// ─── ESM PROGRESS ──────────────────────────────────────────────────────────
+const ESM = [
+  { label: "3000m",        current: 0,    target: 15,   max: 20, unit: "/20", note: "chantier n°1" },
+  { label: "Tractions",    current: 17,   target: 18,   max: 20, unit: "/20" },
+  { label: "Abdos 1min",   current: 12,   target: 17,   max: 20, unit: "/20" },
+  { label: "Natation 50m", current: 10,   target: 15,   max: 20, unit: "/20" },
+  { label: "Sprint 50m",   current: 14,   target: 16,   max: 20, unit: "/20" },
+];
+const COLORS = ["#DC2626","#2563EB","#EA580C","#7C3AED","#0891B2"];
+
+function renderESM() {
+  const wrap = document.getElementById("esm-progress");
+  wrap.innerHTML = ESM.map((e, i) => {
+    const pct = Math.round((e.current / e.max) * 100);
+    const tpct = Math.round((e.target / e.max) * 100);
+    return `
+      <div class="esm-row">
+        <div class="esm-label">${e.label}${e.note ? ` <span style="color:#EA580C;font-size:.7rem">(${e.note})</span>` : ""}</div>
+        <div class="esm-bar-wrap" style="position:relative">
+          <div class="esm-bar" style="width:${pct}%;background:${COLORS[i]}"></div>
+          <div style="position:absolute;top:0;left:${tpct}%;width:2px;height:100%;background:#1B2A4A;opacity:.4"></div>
+        </div>
+        <div class="esm-score" style="color:${COLORS[i]}">${e.current}${e.unit}</div>
+        <div style="font-size:.75rem;color:#94A3B8;width:60px">→ ${e.target}</div>
+      </div>`;
+  }).join("");
+}
+
+// ─── ALERTES ───────────────────────────────────────────────────────────────
+function checkAlerts(entries) {
+  const alerts = [];
+  if (!entries.length) return;
+  const last = entries[entries.length - 1];
+
+  // Gap d'activité
+  const actif = [...entries].reverse().findIndex(e => e.nb_activites > 0);
+  if (actif > 5) alerts.push(`⚠️ Pas d'activité depuis ${actif} jours — attention au désentraînement.`);
+
+  // FC repos élevée
+  if (fmt(last.resting_hr) > 68)
+    alerts.push(`⚠️ FC repos élevée (${last.resting_hr} bpm) — récupération insuffisante ou début de fatigue.`);
+
+  // Body Battery bas
+  if (fmt(last.body_battery) !== null && last.body_battery < 25)
+    alerts.push(`⚠️ Body Battery très bas (${last.body_battery}) — journée légère recommandée.`);
+
+  const wrap = document.getElementById("alerts");
+  wrap.innerHTML = alerts.map(a => `<div class="alert">${a}</div>`).join("");
+}
+
+// ─── RENDER ────────────────────────────────────────────────────────────────
+function render(entries) {
+  // Trier par date
+  entries.sort((a, b) => a.date.localeCompare(b.date));
+
+  const labels  = entries.map(e => e.date.slice(5));   // MM-DD
+  const rhr     = entries.map(e => fmt(e.resting_hr));
+  const sleep   = entries.map(e => fmt(e.sleep_score));
+  const bb      = entries.map(e => fmt(e.body_battery));
+  const stress  = entries.map(e => fmt(e.stress));
+  const vo2     = entries.map(e => fmt(e.vo2max));
+  const actif   = entries.map(e => fmt(e.nb_activites) ?? 0);
+
+  // KPIs
+  document.getElementById("k-days").textContent   = entries.length;
+  document.getElementById("k-rhr").textContent    = avg(rhr.filter(Boolean));
+  document.getElementById("k-sleep").textContent  = avg(sleep.filter(Boolean));
+  document.getElementById("k-bb").textContent     = avg(bb.filter(Boolean));
+  document.getElementById("k-active").textContent = actif.filter(v => v > 0).length;
+
+  const last = entries[entries.length - 1];
+  document.getElementById("last-update").textContent =
+    `Dernière entrée : ${last?.date || "—"} · ${entries.length} jours enregistrés`;
+
+  // Graphiques
+  lineChart("c-rhr", labels, [{
+    label: "FC repos", data: rhr,
+    borderColor: "#DC2626", backgroundColor: "#FEE2E220", fill: true, borderWidth: 2
+  }], { min: 45, max: 80 });
+
+  lineChart("c-sleep", labels, [{
+    label: "Score", data: sleep,
+    borderColor: "#2563EB", backgroundColor: "#DBEAFE20", fill: true, borderWidth: 2
+  }], { min: 0, max: 100 });
+
+  lineChart("c-bb", labels, [{
+    label: "Body Battery", data: bb,
+    borderColor: "#EA580C", backgroundColor: "#FFF7ED30", fill: true, borderWidth: 2
+  }], { min: 0, max: 100 });
+
+  lineChart("c-stress", labels, [{
+    label: "Stress", data: stress,
+    borderColor: "#7C3AED", backgroundColor: "#EDE9FE20", fill: true, borderWidth: 2
+  }], { min: 0, max: 100 });
+
+  lineChart("c-vo2", labels, [{
+    label: "VO2max", data: vo2,
+    borderColor: "#16A34A", backgroundColor: "#DCFCE720", fill: true, borderWidth: 2,
+    spanGaps: true
+  }], { min: 38, max: 60 });
+
+  barChart("c-act", labels, actif, "#2563EB55");
+
+  // Tableau — du plus récent au plus ancien
+  const tbody = document.getElementById("tbl-body");
+  tbody.innerHTML = [...entries].reverse().map(e => `
+    <tr>
+      <td><b>${e.date}</b></td>
+      <td>${badge(fmt(e.resting_hr), 56, 62)}</td>
+      <td>${badge(fmt(e.sleep_score), 60, 80)}</td>
+      <td>${badge(fmt(e.body_battery), 30, 60)}</td>
+      <td>${e.stress ?? "—"}</td>
+      <td>${e.vo2max ?? "—"}</td>
+      <td>${e.nb_activites > 0 ? '<span class="badge g">✓</span>' : '<span class="badge r">✗</span>'}</td>
+    </tr>`).join("");
+
+  // ESM progress
+  renderESM();
+  checkAlerts(entries);
+
+  // Afficher
+  document.getElementById("status").style.display = "none";
+  document.getElementById("main").style.display   = "block";
+}
+
+// ─── CHARGEMENT ────────────────────────────────────────────────────────────
+async function load() {
+  try {
+    const res = await fetch(API, { headers: { Accept: "application/vnd.github.v3+json" } });
+    if (!res.ok) throw new Error(`GitHub API: ${res.status}`);
+    const meta    = await res.json();
+    const content = atob(meta.content.replace(/\n/g, ""));
+    const json    = JSON.parse(content);
+    const entries = json.entrees || [];
+    if (!entries.length) throw new Error("Aucune donnée dans historique.json");
+    render(entries);
+  } catch (err) {
+    document.getElementById("status").innerHTML =
+      `❌ Impossible de charger les données<br><small style="color:#94A3B8">${err.message}</small>
+       <br><br><small>Vérifie que le repo est public et que l'agent a déjà tourné au moins une fois.</small>`;
+  }
+}
+
+load();
+</script>
+</body>
+</html>
