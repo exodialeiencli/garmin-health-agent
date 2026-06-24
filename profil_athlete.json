@@ -11,7 +11,16 @@
     "naissance": "2003-09-14",
     "age": 22,
     "taille_cm": 173,
-    "poids_kg": 67
+    "poids_kg": 67,
+    "poids_dernieres_mesures": [
+      {
+        "date": "2026-06-19",
+        "poids_kg": 71,
+        "conditions": "soirée, après repas, avant toilettes — non comparable à une pesée du matin à jeun",
+        "fiabilite": "basse — contexte de mesure non standardisé, ne pas traiter comme variation réelle de poids"
+      }
+    ],
+    "note_poids": "Pour un suivi fiable, peser le matin à jeun après toilettes, dans les mêmes conditions à chaque fois. Une pesée isolée en soirée n'est pas comparable à la baseline de 67kg."
   },
 
   "objectif_principal": {
@@ -63,11 +72,14 @@
     "vo2max_cible_2028": 56,
     "vma_estimee_kmh": 13.7,
     "vma_estimee_methode": "Léger-Mercier: VMA = VO2max/3.5 = 48/3.5",
-    "vma_testee_kmh": null,
-    "vma_test_date": null,
-    "vma_test_protocole": "Tapis pente 1%, échauffement 10min à 8km/h, +0.5km/h chaque minute jusqu'à épuisement. Dernière vitesse tenue 1min complète = VMA.",
+    "vma_testee_kmh": 13.0,
+    "vma_test_date": "2026-06-23",
+    "vma_test_protocole": "Tapis pente 1%, +0.5km/h chaque minute jusqu'à épuisement. Dernière vitesse tenue 1min complète = VMA.",
+    "vma_test_resultat": "Palier 13.0 km/h validé (vitesse max 13.0). FC max atteinte 191 bpm = 94% FCmax (203). Arrêt sur fatigue musculaire/perceptive AVANT plafond cardiaque => VMA possiblement légèrement sous-estimée (vraie valeur ~13-13.5). On retient 13.0 (conservateur, sécurité périostite).",
+    "vma_vs_estimation": "Testée 13.0 < estimée 13.7. Écart cohérent avec une économie de course perfectible (FC monte vite). Le VO2max Garmin 48 surestime un peu la VMA réelle en course.",
     "allure_3000m_cible": "3:50/km (15.6 km/h) pour 11:30",
-    "vma_requise_pour_cible": "16.5-17 km/h (3000m couru à ~92-94% VMA) => VO2max ~57-58"
+    "vma_requise_pour_cible": "16.5-17 km/h (3000m couru à ~92-94% VMA) => VO2max ~57-58. Soit +27% de VMA sur 24 mois: ambitieux, exige une régularité sans faille.",
+    "ecart_3000m_actuel": "Best 3km = 5:32/km = 10.85 km/h = SEULEMENT 83% de VMA. Un coureur entraîné court son 3000m à 90-95% VMA. => Le 3km est 'mou' par rapport au moteur: gros potentiel inexploité en endurance spécifique + pacing, AVANT même de gagner de la VMA."
   },
 
   "zones_fc_officielles": {
@@ -77,7 +89,9 @@
     "z3_tempo": [142, 162],
     "z4_seuil": [162, 183],
     "z5_vma": [183, 203],
-    "note_importante": "Mathurin a du mal à rester sous 142 en courant. Sa Z2 fonctionnelle (talk test) est probablement 140-152 bpm. À CONFIRMER par test terrain. Ne pas le forcer sous 140 si le talk test passe à 148."
+    "note_importante": "Mathurin a du mal à rester sous 142 en courant. Sa Z2 fonctionnelle (talk test) est ~140-152 bpm. Ne pas le forcer sous 140 si le talk test passe à 148.",
+    "preuve_test_2026-06-23": "CONFIRMÉ par le test VMA: à 9 km/h (6:40/km), il était déjà en Z3 (FC ~150-160). Seulement 2% du temps passé en Z2 FC. => Son allure VRAIMENT facile actuelle est plutôt 7:00-7:30/km. Prescrire le Z2 par FC (plafond ~150) et non par allure: le chrono suivra avec la base.",
+    "cadence": "161 ppm en moyenne (174 max). Cadence basse à allure lente = foulées longues = plus d'impact tibial. Viser ~165-170 ppm même en footing lent: meilleure économie ET moins de contrainte sur le tibia (prévention périostite)."
   },
 
   "modele_entrainement": {
@@ -87,14 +101,14 @@
     "application_mathurin": "Phase 1 = quasi 100% Z2 (construire la base). Le 20% intensité s'introduit en Phase 2 quand la base est solide."
   },
 
-  "zones_allures_vma_estimee": {
-    "_calcul": "Basé sur VMA 13.7 km/h — PROVISOIRE jusqu'au test VMA",
-    "z1_recup_kmh": 8.2, "z1_recup_pace": "7:18/km",
-    "z2_endurance_kmh": "8.9-9.6", "z2_endurance_pace": "6:15-6:45/km",
-    "tempo_seuil_kmh": 11.5, "tempo_seuil_pace": "5:13/km",
-    "vo2_intervalle_kmh": "12.3-13.0", "vo2_intervalle_pace": "4:37-4:53/km",
-    "vma_kmh": 13.7, "vma_pace": "4:22/km",
-    "statut": "PROVISOIRE — recalibrer après test VMA lundi 2026-06-23"
+  "zones_allures": {
+    "_calcul": "Basé sur VMA TESTÉE 13.0 km/h (2026-06-23)",
+    "z2_endurance_theorique_kmh": "8.5-9.4", "z2_endurance_theorique_pace": "6:25-7:05/km",
+    "z2_endurance_reel_par_fc": "7:00-7:30/km (FC plafond ~150) — c'est CE chiffre qui prime en Phase 1, pas l'allure théorique",
+    "tempo_seuil_kmh": 11.0, "tempo_seuil_pace": "5:26/km",
+    "vo2_intervalle_kmh": "11.7-12.4", "vo2_intervalle_pace": "4:50-5:08/km",
+    "vma_kmh": 13.0, "vma_pace": "4:37/km",
+    "statut": "CALIBRÉ sur test réel. À re-tester tous les 6-8 semaines pour suivre la progression."
   },
 
   "performances_running_reelles": {
@@ -190,11 +204,15 @@
 
   "suivi_progres": {
     "derniere_mesure_3000m": null,
-    "derniere_mesure_vma": null,
+    "derniere_mesure_vma": {"valeur_kmh": 13.0, "date": "2026-06-23", "methode": "test tapis incrémental +0.5km/h/min, pente 1%", "fc_max_test": 191},
     "derniere_mesure_tractions_max": null,
     "derniere_mesure_abdos_max": null,
     "fc_repos_30j": null,
     "volume_km_30j": null,
-    "note": "À remplir après tests de calibration semaine du 2026-06-23"
+    "historique_vma": [
+      {"date": "2024-12", "vma_kmh": "13-13.5", "source": "Luc Léger palier 7.5-8 (équivalent track estimé), meilleure période"},
+      {"date": "2026-06-23", "vma_kmh": 13.0, "source": "test tapis direct"}
+    ],
+    "note": "VMA de référence posée le 2026-06-23. Niveau ~équivalent au pic 2024 => PAS de régression réelle. Prochain test VMA: vers mi-août 2026 pour mesurer l'effet de la Phase 1."
   }
 }
