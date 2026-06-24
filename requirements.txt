@@ -1,0 +1,3 @@
+garminconnect
+anthropic
+requests
