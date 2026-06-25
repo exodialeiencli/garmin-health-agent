@@ -22,8 +22,10 @@
       "readiness": "N/A",
       "vo2max": "N/A",
       "nb_activites": 14,
-      "dispo": null,
-      "feedbacks": []
+      "dispo": "beaucoup",
+      "feedbacks": [
+        "\\go"
+      ]
     }
   ],
   "stats_30j": {
