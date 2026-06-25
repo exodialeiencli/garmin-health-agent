@@ -46,6 +46,76 @@ jobs:
 
       - name: Lancer l'agent
         env:
+          GARMIN_TOKEN_BASE64: ${{ secrets.GARMIN_TOKEN_BASE64 }}
+          GARMIN_EMAIL:     ${{ secrets.GARMIN_EMAIL }}
+          GARMIN_PASSWORD:  ${{ secrets.GARMIN_PASSWORD }}
+          ANTHROPIC_KEY:    ${{ secrets.ANTHROPIC_KEY }}
+          TELEGRAM_TOKEN:   ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          AGENT_MODE:  ${{ github.event.inputs.mode }}
+          AGENT_DISPO: ${{ github.event.inputs.dispo }}
+        run: python garmin_fetch.py
+
+      - name: Sauvegarder l'historique dans le repo
+        if: always()
+        run: |
+          git config user.name  "Garmin Health Agent"
+          git config user.email "agent@users.noreply.github.com"
+          git pull --rebase --autostash origin main || true
+          git add historique.json 2>/dev/null || true
+          if ! git diff --cached --quiet; then
+            git commit -m "Historique $(date +%Y-%m-%d) [${{ github.event.inputs.mode || 'schedule' }}]"
+            git push
+          else
+            echo "Pas de changement d'historique a committer"
+          finame: Morning Health Brief
+
+on:
+  schedule:
+    # FILET DE SÉCURITÉ : 10h30 Shanghai (UTC+8) = 02h30 UTC, lundi-vendredi.
+    # Si Mathurin oublie d'envoyer /go, il reçoit quand même son brief.
+    # ⚠️ Retour France (UTC+2 été) → passer à '30 8 * * 1-5'.
+    - cron: '30 2 * * 1-5'
+
+  # Déclenchement à distance (via Telegram /go ou bouton dispo, par le listener).
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'brief (bilan matin) ou seance (apres dispo)'
+        required: false
+        default: 'brief'
+        type: string
+      dispo:
+        description: 'beaucoup | court | rien (mode seance uniquement)'
+        required: false
+        default: ''
+        type: string
+
+permissions:
+  contents: write      # nécessaire pour committer historique.json
+
+concurrency:
+  group: morning-brief
+  cancel-in-progress: false
+
+jobs:
+  health-brief:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Installer dépendances
+        run: pip install garminconnect anthropic requests
+
+      - name: Lancer l'agent
+        env:
           GARMIN_EMAIL:     ${{ secrets.GARMIN_EMAIL }}
           GARMIN_PASSWORD:  ${{ secrets.GARMIN_PASSWORD }}
           ANTHROPIC_KEY:    ${{ secrets.ANTHROPIC_KEY }}
