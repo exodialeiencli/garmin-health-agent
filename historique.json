@@ -11,16 +11,29 @@
       "vo2max": "N/A",
       "nb_activites": 14,
       "reco": "**MATHURIN — MERCREDI 24/06/2026**\n\n---\n\n**1. RÉCUPÉRATION: EXCELLENT**\nSommeil 8.6h avec structure saine (profond + REM équilibré). FC repos 55 bpm = baseline. Body Battery 62 = autonomie bonne. Stress très bas (21/100). Green light pour entraînement.\n\n---\n\n**2. SÉANCE DU JOUR**\n\n**Bloc cardio (Z2 aérobie):**\n- 10 min échauffement très facile (~7:30/km, FC <140)\n- 35-40 min Z2 en continu (~7:00-7:20/km, FC cible 145-150 bpm) — PILOTER À LA FC, pas au chrono. Si tu sens la respiration facile = c'est bon.\n- 5 min retour au calme\n- **Total: 50-55 min sur tapis roulant**\n\n**Bloc prévention (après 10 min repos):**\n- Renforcement tibias/mollets: 3 séries x 12 élévations mollets (poids du corps ou haltères)\n- 3 x 15 flexions plantaires assis (élastique)\n- 3 x 12 squats légers à amplitude contrôlée\n- **Durée: 12-15 min**\n\n---\n\n**3. NOTES**\nHier (23/06) tu as fait du travail soutenu (20 min à 166 FC moy). Aujourd'hui c'est reconstruction Z2 vraiment facile. La cadence est à 161-162 ppm en ce moment → vise 165-167 ppm même au lent pour économie de foulée et moins d'impact tibial.\n\nAucune alerte. Bon à l'entraînement."
+    },
+    {
+      "date": "2026-06-25",
+      "sleep_score": 83,
+      "sleep_hours": 9.4,
+      "body_battery": 81,
+      "stress": 17,
+      "resting_hr": 56,
+      "readiness": "N/A",
+      "vo2max": "N/A",
+      "nb_activites": 14,
+      "dispo": null,
+      "feedbacks": []
     }
   ],
   "stats_30j": {
-    "fc_repos_moy": 55.0,
-    "sleep_score_moy": 84.0,
-    "body_battery_moy": 62.0,
-    "stress_moy": 21.0,
+    "fc_repos_moy": 55.5,
+    "sleep_score_moy": 83.5,
+    "body_battery_moy": 71.5,
+    "stress_moy": 19.0,
     "readiness_moy": "N/A",
-    "nb_jours_actifs": 1,
-    "nb_jours_suivis": 1
+    "nb_jours_actifs": 2,
+    "nb_jours_suivis": 2
   },
-  "derniere_maj": "2026-06-24"
+  "derniere_maj": "2026-06-25"
 }
