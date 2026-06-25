@@ -22,7 +22,7 @@ Méthodes garminconnect vérifiées (v0.2.x) :
   get_activities(start, limit) -> list[dict]
 """
 
-import json, os, requests, logging
+import json, os, requests, logging, base64, tarfile, io
 from datetime import date, timedelta
 from garminconnect import Garmin
 import anthropic
@@ -30,6 +30,7 @@ import anthropic
 logging.getLogger("garminconnect").setLevel(logging.ERROR)
 
 # ─── CONFIG ───────────────────────────────────────────────────────────────────
+GARMIN_TOKEN_BASE64 = os.environ.get("GARMIN_TOKEN_BASE64", "")
 GARMIN_EMAIL     = os.environ.get("GARMIN_EMAIL",     "")
 GARMIN_PASSWORD  = os.environ.get("GARMIN_PASSWORD",  "")
 ANTHROPIC_KEY    = os.environ.get("ANTHROPIC_KEY",    "")
@@ -99,14 +100,33 @@ DISPO_KEYBOARD = {
 
 
 # ─── GARMIN ───────────────────────────────────────────────────────────────────
+TOKENSTORE = os.path.expanduser("~/.garminconnect")
+
 def connect_garmin():
+    # 1) AUTH PAR TOKEN (priorité — évite le rate-limit 429 des logins répétés)
+    #    GARMIN_TOKEN_BASE64 = archive tar.gz du dossier ~/.garminconnect,
+    #    générée une fois en local par generer_token_garmin.py.
+    if GARMIN_TOKEN_BASE64:
+        try:
+            os.makedirs(TOKENSTORE, exist_ok=True)
+            raw = base64.b64decode(GARMIN_TOKEN_BASE64)
+            with tarfile.open(fileobj=io.BytesIO(raw), mode="r:gz") as tar:
+                tar.extractall(TOKENSTORE)
+            client = Garmin()
+            client.login(TOKENSTORE)   # reprend la session sans email/mdp
+            print("✅ Connecté à Garmin (token)")
+            return client
+        except Exception as e:
+            print(f"⚠️  Auth token échouée ({e}) — fallback email/mot de passe")
+
+    # 2) FALLBACK email/mot de passe (si token absent ou expiré)
     if not GARMIN_EMAIL or not GARMIN_PASSWORD:
-        print("❌ Identifiants Garmin manquants")
+        print("❌ Aucun moyen d'auth Garmin (ni token valide ni email/mdp)")
         return None
     try:
         client = Garmin(GARMIN_EMAIL, GARMIN_PASSWORD)
         client.login()
-        print("✅ Connecté à Garmin Connect")
+        print("✅ Connecté à Garmin (email/mdp)")
         return client
     except Exception as e:
         print(f"❌ Erreur connexion Garmin: {e}")
@@ -341,6 +361,11 @@ def build_prompt(data, profil, hist, mode="brief", dispo=None):
     tempo = kmh_to_pace(vma * 0.85)
     vmax  = kmh_to_pace(vma)
 
+    # Allure Z2 RÉELLE pilotée par la FC (vérité empirique du test VMA), pas la
+    # valeur théorique optimiste. À 6:40/km Mathurin est déjà en Z3 → on prescrit la FC.
+    z2_reel = profil.get("zones_allures", {}).get(
+        "z2_endurance_reel_par_fc", f"{z2_hi}–{z2_lo} (FC plafond ~150)")
+
     s       = data.get("sleep", {})
     rd      = data.get("readiness", "N/A")
     rd_str  = f"{rd['score']}/100 ({rd.get('level','')})" if isinstance(rd, dict) else "N/A"
@@ -396,7 +421,7 @@ def build_prompt(data, profil, hist, mode="brief", dispo=None):
 {profil_resume}
 
 == ZONES (VMA {vma} km/h) ==
-- Z2 endurance (le pain quotidien): {z2_hi} à {z2_lo}, FC ~135-150 bpm. C'est ICI que se construit la base.
+- Z2 endurance (le pain quotidien): {z2_reel}. PILOTÉ PAR LA FC (plafond ~150 bpm), PAS par le chrono — le chrono suivra avec la base. C'est ICI que tout se construit. (Repère théorique VMA: {z2_hi}–{z2_lo}, mais à l'usage Mathurin part trop vite, on tient la FC.)
 - Tempo/seuil: {tempo}, FC ~160-170 (Phase 2, pas maintenant)
 - VMA: {vmax} (Phase 2+)
 ⚠️ PIÈGE À ÉVITER: la "zone grise" (courir le facile trop dur). Les jours Z2 doivent être VRAIMENT faciles.
@@ -446,7 +471,7 @@ RAPPEL anti-périostite: pour les mollets, le RENFORCEMENT EXCENTRIQUE (déjà a
 ÉTIREMENTS: ''' + ('routine étirements COMPLÈTE tout le corps (jour off) + mobilité' if est_weekend else 'termine TOUJOURS par un bloc étirements modulé selon la séance (socle tout le corps + focus muscles sollicités, mollets/tibial prioritaires). Précise avant=dynamique / après=statique.') + '''
 ''' + ('Un mot encourageant bref.' if est_weekend else '5. ALERTE si: FC repos > 68, Readiness < 35, ou gap d_activité > 6 jours.')}
 
-Allures réalistes seulement (ce niveau court actuellement ~5:30-6:45/km selon l'intensité — JAMAIS 4:30/km en Z2). Pas de markdown lourd."""
+Allures réalistes seulement: le Z2 facile de Mathurin est ~7:00-7:30/km piloté FC (à 6:40/km il est déjà en Z3). Ne JAMAIS prescrire plus rapide que 7:00/km en Z2, ni un 4:30/km. Pas de markdown lourd."""
     return prompt, vma, vma_status, est_weekend, jour_sem
 
 
@@ -506,7 +531,10 @@ def get_recommendation(data, profil, hist, mode="brief", dispo=None):
 if __name__ == "__main__":
     # MODE et DISPO peuvent être passés par le listener Telegram via variables d'env.
     # mode='brief' (défaut, message matin) ou 'seance' (après réponse dispo).
-    MODE  = os.environ.get("AGENT_MODE", "brief")
+    # ⚠️ `or` et non `.get(..., "brief")` : sur un déclenchement CRON, GitHub injecte
+    # AGENT_MODE="" (chaîne vide présente), et le défaut d'un .get ne s'applique PAS.
+    # Sans ce `or`, le brief automatique du matin partait en mode SÉANCE imposée.
+    MODE  = os.environ.get("AGENT_MODE") or "brief"
     DISPO = os.environ.get("AGENT_DISPO") or None
 
     print(f"🏃 Garmin Health Agent v3.2  (mode={MODE}, dispo={DISPO})\n")
