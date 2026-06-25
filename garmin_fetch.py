@@ -39,7 +39,9 @@ TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 
 PROFIL_FILE     = "profil_athlete.json"
 HISTORIQUE_FILE = "historique.json"
-MAX_ACTIVITES   = 14
+MAX_ACTIVITES   = 14     # activités affichées dans le prompt (les plus récentes)
+FETCH_ACTIVITES = 40     # activités récupérées pour alimenter la mémoire persistante
+STORE_JOURS     = 120    # fenêtre glissante du stock d'activités dans historique.json
 MODELE_CLAUDE   = "claude-haiku-4-5-20251001"
 
 
@@ -230,15 +232,18 @@ def fetch_data(client):
     except Exception as e:
         print(f"⚠️  VO2max: {e}")
 
-    # ── Activités (14 dernières, filtre < 8 min pour ignorer tractions isolées)
+    # ── Activités : on en récupère plus (FETCH_ACTIVITES) pour alimenter la mémoire
+    #    persistante, en capturant l'activityId (clé de déduplication fiable).
+    #    Filtre < 8 min pour ignorer les tractions/séries isolées.
     data["recent_activities"] = []
     try:
-        raw_acts = client.get_activities(0, MAX_ACTIVITES + 12) or []
+        raw_acts = client.get_activities(0, FETCH_ACTIVITES) or []
         for a in raw_acts:
             dur_min = round((a.get("duration") or 0) / 60)
             if dur_min < 8:
                 continue
             data["recent_activities"].append({
+                "id":       a.get("activityId"),
                 "date":     (a.get("startTimeLocal") or "")[:10],
                 "type":     a.get("activityType", {}).get("typeKey", "unknown"),
                 "duration": dur_min,
@@ -246,8 +251,6 @@ def fetch_data(client):
                 "avg_hr":   a.get("averageHR"),
                 "max_hr":   a.get("maxHR"),
             })
-            if len(data["recent_activities"]) >= MAX_ACTIVITES:
-                break
         print(f"✅ {len(data['recent_activities'])} activités récupérées")
     except Exception as e:
         print(f"⚠️  Activités: {e}")
@@ -278,13 +281,39 @@ def print_data(data):
 
 
 # ─── HISTORIQUE PERSISTANT ────────────────────────────────────────────────────
+def _cle_activite(a):
+    """Clé de déduplication : activityId Garmin si présent, sinon clé composite."""
+    if a.get("id"):
+        return f"id:{a['id']}"
+    return f"{a.get('date')}|{a.get('type')}|{a.get('duration')}|{a.get('distance')}"
+
+
+def fusionner_activites(existantes, nouvelles, today=None, jours=STORE_JOURS):
+    """Fusionne le stock persistant et les activités fraîches (les fraîches priment),
+    déduplique, garde la fenêtre glissante `jours`, trie par date croissante."""
+    today = today or date.today()
+    par_cle = {}
+    for a in (existantes or []):
+        if a.get("date"):
+            par_cle[_cle_activite(a)] = a
+    for a in (nouvelles or []):           # les fraîches écrasent (données plus à jour)
+        if a.get("date"):
+            par_cle[_cle_activite(a)] = a
+    cutoff = (today - timedelta(days=jours)).isoformat()
+    fusion = [a for a in par_cle.values() if a.get("date", "") >= cutoff]
+    fusion.sort(key=lambda x: (x.get("date", ""), x.get("type", "")))
+    return fusion
+
+
 def load_historique():
     if os.path.exists(HISTORIQUE_FILE):
         try:
-            return json.load(open(HISTORIQUE_FILE))
+            h = json.load(open(HISTORIQUE_FILE))
+            h.setdefault("activites", [])      # rétro-compat: stock d'activités
+            return h
         except Exception:
             pass
-    return {"entrees": [], "stats_30j": {}, "derniere_maj": None}
+    return {"entrees": [], "activites": [], "stats_30j": {}, "derniere_maj": None}
 
 
 def save_historique(hist, data):
@@ -292,6 +321,10 @@ def save_historique(hist, data):
     s  = data.get("sleep", {})
     rd = data.get("readiness", "N/A")
     rd_score = rd.get("score") if isinstance(rd, dict) else "N/A"
+
+    # ── Mémoire d'entraînement : fusion des activités dans le stock persistant
+    hist["activites"] = fusionner_activites(
+        hist.get("activites", []), data.get("recent_activities", []))
 
     # On préserve dispo + feedbacks éventuellement déjà écrits par le listener aujourd'hui
     existant = next((e for e in hist["entrees"] if e.get("date") == today), {})
@@ -342,6 +375,139 @@ def save_historique(hist, data):
 
 
 # ─── RECOMMANDATION CLAUDE ────────────────────────────────────────────────────
+def _classer_type(typekey):
+    """Catégorise une activité Garmin en famille d'entraînement."""
+    t = (typekey or "").lower()
+    if "run" in t:                                   return "course"
+    if any(k in t for k in ("cycl", "bik", "velo")): return "velo"
+    if any(k in t for k in ("strength", "training", "gym", "weight", "muscu")): return "renfo"
+    if any(k in t for k in ("walk", "hik")):         return "marche"
+    if "swim" in t:                                  return "natation"
+    return "autre"
+
+
+def _intensite_course(avg_hr, z2_ceiling, z4_start):
+    """Classe l'intensité d'une course via la FC moyenne."""
+    if not avg_hr:
+        return "?"
+    if avg_hr <= z2_ceiling + 2:  return "facile"   # Z1-Z2
+    if avg_hr < z4_start:         return "modérée"  # Z3 (zone grise)
+    return "dure"                                   # Z4-Z5
+
+
+def analyser_microcycle(acts, today, z2_ceiling=152, z4_start=162):
+    """
+    Analyse les 7 derniers jours comme le ferait un entraîneur :
+    volume course, jours d'impact, intensité, dernière séance, alternance,
+    jours depuis dernière course / dernière séance dure / dernière longue.
+    Retourne un dict de faits + un résumé textuel.
+    """
+    j7 = today - timedelta(days=7)
+    sem = []
+    for a in acts:
+        try:
+            adate = date.fromisoformat(a.get("date", ""))
+        except Exception:
+            continue
+        if adate >= j7:
+            sem.append((adate, a))
+    sem.sort(key=lambda x: x[0], reverse=True)   # plus récent d'abord
+
+    run_min = run_km = 0
+    jours_course, jours_velo, jours_renfo = set(), set(), set()
+    nb_dures = nb_longues = 0
+    derniere = None
+    j_depuis_course = j_depuis_dure = j_depuis_longue = None
+    detail = []
+
+    for adate, a in sem:
+        fam = _classer_type(a.get("type"))
+        dur = a.get("duration") or 0
+        dist = a.get("distance") or 0
+        intens = _intensite_course(a.get("avg_hr"), z2_ceiling, z4_start) if fam == "course" else "-"
+        jdiff = (today - adate).days
+        if fam == "course":
+            run_min += dur; run_km += dist; jours_course.add(adate)
+            if j_depuis_course is None: j_depuis_course = jdiff
+            if intens == "dure":
+                nb_dures += 1
+                if j_depuis_dure is None: j_depuis_dure = jdiff
+            if dur >= 45:
+                nb_longues += 1
+                if j_depuis_longue is None: j_depuis_longue = jdiff
+        elif fam == "velo":
+            jours_velo.add(adate)
+        elif fam == "renfo":
+            jours_renfo.add(adate)
+        if derniere is None:
+            derniere = {"jours": jdiff, "fam": fam, "dur": dur, "intens": intens}
+        detail.append(f"J-{jdiff} {fam} {dur}min"
+                      + (f"/{round(dist,1)}km/{intens}" if fam == 'course' else ""))
+
+    # Jours de course consécutifs en terminant à J-1
+    streak = 0
+    d = today - timedelta(days=1)
+    while d in jours_course:
+        streak += 1; d -= timedelta(days=1)
+
+    # Volume course de la semaine PRÉCÉDENTE (J-8 à J-14) pour la règle des +10%
+    run_min_prev = 0
+    j14, j8 = today - timedelta(days=14), today - timedelta(days=8)
+    for a in acts:
+        try:
+            adate = date.fromisoformat(a.get("date", ""))
+        except Exception:
+            continue
+        if j14 <= adate <= j8 and _classer_type(a.get("type")) == "course":
+            run_min_prev += a.get("duration") or 0
+    if run_min_prev > 0:
+        delta = round((run_min - run_min_prev) / run_min_prev * 100)
+        evo_txt = (f"Volume course: {round(run_min)}min cette semaine vs {round(run_min_prev)}min "
+                   f"la précédente ({'+' if delta >= 0 else ''}{delta}%). "
+                   + ("⚠️ Hausse >10% = risque MTSS, plafonne." if delta > 10 else "Progression maîtrisée."))
+    else:
+        evo_txt = f"Volume course semaine précédente: insuffisant pour comparer (reprise)."
+
+    resume = (
+        f"7 derniers jours: {round(run_min)}min course / {round(run_km,1)}km sur {len(jours_course)}j, "
+        f"vélo {len(jours_velo)}j, renfo {len(jours_renfo)}j. "
+        f"Séances dures: {nb_dures}, longues (≥45min): {nb_longues}. "
+        f"Jours course consécutifs (fin J-1): {streak}.\n"
+        f"{evo_txt}\n"
+        f"Dernière séance: " + (f"J-{derniere['jours']} {derniere['fam']} {derniere['dur']}min "
+        f"({derniere['intens']})" if derniere else "aucune cette semaine") + ".\n"
+        f"Depuis dernière course: {j_depuis_course if j_depuis_course is not None else '7+'}j | "
+        f"dernière séance dure: {j_depuis_dure if j_depuis_dure is not None else '7+'}j | "
+        f"dernière longue: {j_depuis_longue if j_depuis_longue is not None else '7+'}j.\n"
+        f"Détail: " + (" ; ".join(detail) if detail else "rien")
+    )
+    return {
+        "run_min": run_min, "run_km": run_km,
+        "jours_course": len(jours_course), "jours_velo": len(jours_velo),
+        "jours_renfo": len(jours_renfo), "nb_dures": nb_dures, "nb_longues": nb_longues,
+        "streak_course": streak, "derniere": derniere,
+        "j_depuis_course": j_depuis_course, "j_depuis_dure": j_depuis_dure,
+        "j_depuis_longue": j_depuis_longue, "resume": resume,
+    }
+
+
+def phase_courante(profil, today):
+    """Détermine la phase du plan 24 mois à partir de la date du jour."""
+    plan = profil.get("plan_progression_24_mois", {})
+    ym = today.strftime("%Y-%m")
+    for key, ph in plan.items():
+        per = ph.get("periode", "")
+        bornes = [b.strip() for b in per.replace("à", "-").split("-") if b.strip()]
+        # periode du type "2026-06 à 2026-12"
+        if len(bornes) >= 4:
+            debut = f"{bornes[0]}-{bornes[1]}"
+            fin   = f"{bornes[2]}-{bornes[3]}"
+            if debut <= ym <= fin:
+                return key, ph
+    # défaut: phase 1
+    return "phase_1_base", plan.get("phase_1_base", {})
+
+
 def build_prompt(data, profil, hist, mode="brief", dispo=None):
     """
     mode='brief'  : message du matin = bilan santé + invitation à donner sa dispo.
@@ -365,12 +531,27 @@ def build_prompt(data, profil, hist, mode="brief", dispo=None):
     # valeur théorique optimiste. À 6:40/km Mathurin est déjà en Z3 → on prescrit la FC.
     z2_reel = profil.get("zones_allures", {}).get(
         "z2_endurance_reel_par_fc", f"{z2_hi}–{z2_lo} (FC plafond ~150)")
+    z2_court = z2_reel.split(" — ")[0].strip()   # ex: "7:00-7:30/km (FC plafond ~150)"
 
     s       = data.get("sleep", {})
     rd      = data.get("readiness", "N/A")
     rd_str  = f"{rd['score']}/100 ({rd.get('level','')})" if isinstance(rd, dict) else "N/A"
     stats   = hist.get("stats_30j", {})
-    acts    = data.get("recent_activities", [])
+    # Mémoire longue : union du stock persistant + activités fraîches (dédupliqué).
+    # Fonctionne quel que soit l'ordre save/reco. acts = liste complète (jusqu'à 120j).
+    acts    = fusionner_activites(hist.get("activites", []),
+                                  data.get("recent_activities", []), today)
+    acts_recentes = sorted(acts, key=lambda x: x.get("date", ""), reverse=True)[:MAX_ACTIVITES]
+
+    # ── ANALYSE DU MICROCYCLE (la semaine) + phase du plan 24 mois
+    zfc = profil.get("zones_fc_officielles", {})
+    # Plafond Z2 FONCTIONNEL (~152) : le profil note que son facile/talk-test va jusqu'à
+    # ~152 et qu'il ne faut pas le forcer sous 140. On classe le "facile" là-dessus,
+    # sinon ses footings Z2 réels seraient comptés à tort comme du Z3.
+    z2_ceiling = 152
+    z4_start   = (zfc.get("z4_seuil", [162, 183]) or [162, 183])[0]
+    analyse = analyser_microcycle(acts, today, z2_ceiling, z4_start)
+    phase_key, phase = phase_courante(profil, today)
 
     # Feedbacks récents (3 derniers jours) pour contexte
     cutoff_fb = (today - timedelta(days=3)).isoformat()
@@ -390,7 +571,7 @@ def build_prompt(data, profil, hist, mode="brief", dispo=None):
 
     # ── Consignes selon mode + dispo ──────────────────────────────────────────
     dispo_txt = {
-        "beaucoup": "Mathurin a BEAUCOUP de temps aujourd'hui → séance complète possible (bloc principal long + muscu + étirements).",
+        "beaucoup": "Mathurin a BEAUCOUP de temps → séance complète possible, MAIS choisis dans le MENU selon l'ANALYSE DU MICROCYCLE et les RÈGLES DE RÉCUPÉRATION. Si la charge d'impact récente l'interdit, ce temps va en vélo + renfo + mobilité, PAS en 2e longue course.",
         "court":    "Mathurin a PEU de temps aujourd'hui → format court et efficace (séance minimale de maintien, anti-désentraînement Mujika: réduire volume mais garder qualité).",
         "rien":     "Mathurin n'a PAS le temps de s'entraîner aujourd'hui → propose UNIQUEMENT 10-15 min bien-être/mobilité/étirements (focus mollets-tibias). Aucune séance structurée.",
     }
@@ -435,7 +616,33 @@ VO2max actuel: {data.get('vo2max','N/A')}
 Tendances 30j: FC repos moy {stats.get('fc_repos_moy','N/A')} | Readiness moy {stats.get('readiness_moy','N/A')} | {stats.get('nb_jours_actifs','N/A')} jours actifs/{stats.get('nb_jours_suivis','N/A')}
 
 14 dernières activités:
-{json.dumps(acts, indent=1, ensure_ascii=False) if acts else "Aucune activité récente — attention reprise progressive (anti-périostite)."}
+{json.dumps(acts_recentes, indent=1, ensure_ascii=False) if acts_recentes else "Aucune activité récente — attention reprise progressive (anti-périostite)."}
+
+== ANALYSE DU MICROCYCLE (raisonne comme un entraîneur AVANT de décider) ==
+{analyse['resume']}
+
+== PHASE ACTUELLE DU PLAN 24 MOIS : {phase_key} ==
+Objectif: {phase.get('objectif','base aérobie')}
+Distribution visée: {phase.get('distribution','~90% Z2, pas de fractionné intense')}
+
+== MENU DE SÉANCES (choisis LA plus pertinente selon l'analyse ci-dessus + phase + récup + dispo) ==
+A. COURSE FACILE Z2 — 30-50min, {z2_court}. Le pain quotidien. NE PAS enchaîner 2 jours d'impact course si streak élevé ou tibias sensibles.
+B. SORTIE LONGUE Z2 — 50-75min facile. MAX 1×/semaine en Phase 1. Jamais 2 longues à <72h d'écart.
+C. VÉLO (home-trainer) — 40-75min Z2. Zéro impact tibial: l'outil de choix pour garder du volume aérobie SANS charger le tibia (lendemain de course, streak course ≥2, ou moindre gêne).
+D. RENFO BAS DU CORPS / ANTI-PÉRIOSTITE — excentrique mollets (gastro+soléaire), tibial postérieur, proprioception, gainage. 2×/sem, non négociable.
+E. RENFO HAUT DU CORPS ESM — tractions, pompes, abdos protocole (cible 42+). Compatible un lendemain de course (pas d'impact jambes).
+F. MOBILITÉ / RÉCUP ACTIVE — 15-20min, jour de faible dispo ou récup MOYENNE/FAIBLE.
+G. LIGNES DROITES / STRIDES — 4-6×80m en fin de footing facile. SEUL travail "vif" autorisé en Phase 1 (neuromusculaire, faible risque).
+{'H. TEMPO/SEUIL et I. FRACTIONNÉ VMA — INTERDITS en Phase 1 (base seulement). Ne PAS proposer.' if phase_key == 'phase_1_base' else 'H. TEMPO/SEUIL — bloc à allure seuil. I. FRACTIONNÉ VMA — type 30-30 ou 5×1000m. Autorisés selon la phase, max 2 séances dures/semaine, jamais 2 dures consécutives.'}
+
+== RÈGLES DE RÉCUPÉRATION (un bon entraîneur ne se trompe pas — priorité ANTI-BLESSURE) ==
+1. ALTERNANCE DUR/FACILE: jamais 2 séances dures (ou 2 longues) consécutives. Après une longue/dure → facile, vélo, renfo ou repos.
+2. IMPACT TIBIAL: si {analyse['streak_course']} jours de course consécutifs ≥2, ou course ≥45min sur J-1 → aujourd'hui SANS impact (vélo/renfo/mobilité) ou course très courte ≤25min. Antécédent MTSS = on protège le tibia en priorité.
+3. POLARISÉ 80/20: garde ~80% du volume facile. Si la semaine a déjà du dur/modéré, aujourd'hui = facile.
+4. PROGRESSION: volume course hebdo +10% MAX vs semaine précédente. Pas de pic isolé.
+5. RÉCUP DU JOUR: si readiness/sommeil/FC repos dégradés → rabote (vélo/renfo/mobilité plutôt que course longue), même si dispo "beaucoup".
+6. "Beaucoup de temps" se traduit en QUALITÉ/COMPLÉMENTS (renfo + mobilité + vélo), pas en volume d'impact supplémentaire.
+7. Au moindre signal tibia/cheville → STOP course, bascule vélo/repos, signale-le.
 
 Feedbacks récents de Mathurin (3 derniers jours, ressenti/douleurs/exécution — PRENDS-EN COMPTE):
 {chr(10).join(feedbacks_recents) if feedbacks_recents else "Aucun feedback récent."}
