@@ -26,16 +26,139 @@
       "feedbacks": [
         "\\go"
       ]
+    },
+    {
+      "date": "2026-06-26",
+      "sleep_score": 82,
+      "sleep_hours": 7.9,
+      "body_battery": 47,
+      "stress": 24,
+      "resting_hr": 56,
+      "readiness": "N/A",
+      "vo2max": "N/A",
+      "nb_activites": 39,
+      "dispo": null,
+      "feedbacks": []
     }
   ],
   "stats_30j": {
-    "fc_repos_moy": 55.5,
-    "sleep_score_moy": 83.5,
-    "body_battery_moy": 71.5,
-    "stress_moy": 19.0,
+    "fc_repos_moy": 55.7,
+    "sleep_score_moy": 83.0,
+    "body_battery_moy": 63.3,
+    "stress_moy": 20.7,
     "readiness_moy": "N/A",
-    "nb_jours_actifs": 2,
-    "nb_jours_suivis": 2
+    "nb_jours_actifs": 3,
+    "nb_jours_suivis": 3
   },
-  "derniere_maj": "2026-06-25"
+  "derniere_maj": "2026-06-26",
+  "activites": [
+    {
+      "id": 22042360710,
+      "date": "2026-03-03",
+      "type": "running",
+      "duration": 38,
+      "distance": 5.65,
+      "avg_hr": 159.0,
+      "max_hr": 187.0
+    },
+    {
+      "id": 22157035131,
+      "date": "2026-03-13",
+      "type": "running",
+      "duration": 31,
+      "distance": 4.85,
+      "avg_hr": 168.0,
+      "max_hr": 193.0
+    },
+    {
+      "id": 22854418682,
+      "date": "2026-05-12",
+      "type": "treadmill_running",
+      "duration": 27,
+      "distance": 2.5,
+      "avg_hr": 142.0,
+      "max_hr": 188.0
+    },
+    {
+      "id": 22935606686,
+      "date": "2026-05-19",
+      "type": "treadmill_running",
+      "duration": 44,
+      "distance": 6.13,
+      "avg_hr": 150.0,
+      "max_hr": 161.0
+    },
+    {
+      "id": 22960294294,
+      "date": "2026-05-21",
+      "type": "treadmill_running",
+      "duration": 20,
+      "distance": 2.7,
+      "avg_hr": 165.0,
+      "max_hr": 190.0
+    },
+    {
+      "id": 23019584116,
+      "date": "2026-05-26",
+      "type": "treadmill_running",
+      "duration": 40,
+      "distance": 5.95,
+      "avg_hr": 152.0,
+      "max_hr": 166.0
+    },
+    {
+      "id": 23105247007,
+      "date": "2026-06-02",
+      "type": "stop_watch",
+      "duration": 30,
+      "distance": 0.0,
+      "avg_hr": null,
+      "max_hr": null
+    },
+    {
+      "id": 23270108743,
+      "date": "2026-06-16",
+      "type": "treadmill_running",
+      "duration": 58,
+      "distance": 5.69,
+      "avg_hr": 139.0,
+      "max_hr": 166.0
+    },
+    {
+      "id": 23351737825,
+      "date": "2026-06-23",
+      "type": "treadmill_running",
+      "duration": 20,
+      "distance": 3.25,
+      "avg_hr": 166.0,
+      "max_hr": 191.0
+    },
+    {
+      "id": 23364155415,
+      "date": "2026-06-24",
+      "type": "strength_training",
+      "duration": 14,
+      "distance": 0.0,
+      "avg_hr": 113.0,
+      "max_hr": 145.0
+    },
+    {
+      "id": 23363823217,
+      "date": "2026-06-24",
+      "type": "treadmill_running",
+      "duration": 56,
+      "distance": 5.78,
+      "avg_hr": 137.0,
+      "max_hr": 163.0
+    },
+    {
+      "id": 23375059513,
+      "date": "2026-06-25",
+      "type": "indoor_cycling",
+      "duration": 51,
+      "distance": 0.0,
+      "avg_hr": 118.0,
+      "max_hr": 131.0
+    }
+  ]
 }
