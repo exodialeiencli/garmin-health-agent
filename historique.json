@@ -39,6 +39,19 @@
       "nb_activites": 39,
       "dispo": null,
       "feedbacks": []
+    },
+    {
+      "date": "2026-06-29",
+      "sleep_score": "N/A",
+      "sleep_hours": "N/A",
+      "body_battery": null,
+      "stress": null,
+      "resting_hr": "N/A",
+      "readiness": "N/A",
+      "vo2max": "N/A",
+      "nb_activites": 39,
+      "dispo": null,
+      "feedbacks": []
     }
   ],
   "stats_30j": {
@@ -47,10 +60,10 @@
     "body_battery_moy": 63.3,
     "stress_moy": 20.7,
     "readiness_moy": "N/A",
-    "nb_jours_actifs": 3,
-    "nb_jours_suivis": 3
+    "nb_jours_actifs": 4,
+    "nb_jours_suivis": 4
   },
-  "derniere_maj": "2026-06-26",
+  "derniere_maj": "2026-06-29",
   "activites": [
     {
       "id": 22042360710,
