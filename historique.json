@@ -65,18 +65,31 @@
       "nb_activites": 39,
       "dispo": null,
       "feedbacks": []
+    },
+    {
+      "date": "2026-07-01",
+      "sleep_score": "N/A",
+      "sleep_hours": "N/A",
+      "body_battery": 30,
+      "stress": 24,
+      "resting_hr": 65,
+      "readiness": "N/A",
+      "vo2max": "N/A",
+      "nb_activites": 39,
+      "dispo": null,
+      "feedbacks": []
     }
   ],
   "stats_30j": {
-    "fc_repos_moy": 55.7,
+    "fc_repos_moy": 58.0,
     "sleep_score_moy": 83.0,
-    "body_battery_moy": 63.3,
-    "stress_moy": 20.7,
+    "body_battery_moy": 55.0,
+    "stress_moy": 21.5,
     "readiness_moy": "N/A",
-    "nb_jours_actifs": 5,
-    "nb_jours_suivis": 5
+    "nb_jours_actifs": 6,
+    "nb_jours_suivis": 6
   },
-  "derniere_maj": "2026-06-30",
+  "derniere_maj": "2026-07-01",
   "activites": [
     {
       "id": 22042360710,
