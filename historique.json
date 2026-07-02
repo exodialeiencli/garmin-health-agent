@@ -78,28 +78,32 @@
       "nb_activites": 39,
       "dispo": null,
       "feedbacks": []
+    },
+    {
+      "date": "2026-07-02",
+      "sleep_score": "N/A",
+      "sleep_hours": "N/A",
+      "body_battery": 59,
+      "stress": -1,
+      "resting_hr": 77,
+      "readiness": "N/A",
+      "vo2max": "N/A",
+      "nb_activites": 39,
+      "dispo": null,
+      "feedbacks": []
     }
   ],
   "stats_30j": {
-    "fc_repos_moy": 58.0,
+    "fc_repos_moy": 61.8,
     "sleep_score_moy": 83.0,
-    "body_battery_moy": 55.0,
-    "stress_moy": 21.5,
+    "body_battery_moy": 55.8,
+    "stress_moy": 17.0,
     "readiness_moy": "N/A",
-    "nb_jours_actifs": 6,
-    "nb_jours_suivis": 6
+    "nb_jours_actifs": 7,
+    "nb_jours_suivis": 7
   },
-  "derniere_maj": "2026-07-01",
+  "derniere_maj": "2026-07-02",
   "activites": [
-    {
-      "id": 22042360710,
-      "date": "2026-03-03",
-      "type": "running",
-      "duration": 38,
-      "distance": 5.65,
-      "avg_hr": 159.0,
-      "max_hr": 187.0
-    },
     {
       "id": 22157035131,
       "date": "2026-03-13",
